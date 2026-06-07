@@ -258,17 +258,18 @@ async fn main() {
         let max_btn_w = play_dim.width.max(highscore_dim.width).max(level_dim.width) + 30.0 * ui_scale;
         let btn_h = 30.0 * ui_scale;
 
-        // Button 1 (Play) position
+        // Button positions: stack with a fixed gap so they never overlap at any resolution
+        let btn_gap = 8.0 * ui_scale;
         let p_bx = cx - max_btn_w / 2.0;
-        let p_by = view_y + view_h * 0.48 - btn_h / 2.0;
+        let p_by = view_y + view_h * 0.43 - btn_h / 2.0;
 
         // Button 2 (Highscore) position
         let h_bx = cx - max_btn_w / 2.0;
-        let h_by = view_y + view_h * 0.58 - btn_h / 2.0;
+        let h_by = p_by + btn_h + btn_gap;
 
         // Button 3 (Level Select) position
         let l_bx = cx - max_btn_w / 2.0;
-        let l_by = view_y + view_h * 0.68 - btn_h / 2.0;
+        let l_by = h_by + btn_h + btn_gap;
 
         // ==========================================
         // INPUT PROCESSING
@@ -288,6 +289,7 @@ async fn main() {
                     state.is_in_menu = true;
                     state.menu_timer = 0.0;
                     state.menu_title_landed = false;
+                    state.menu_star_played = false;
                     state.menu_particles.clear();
                     game::update_menu_active_js(true);
                     game::play_sound("laser");
@@ -812,6 +814,12 @@ async fn main() {
             // The note fades in once the slogan is done
             let note_fade_start = slogan_start_time + (slogan_base.len() as f32) / 15.0 + 0.5;
             let note_active = state.menu_timer > note_fade_start;
+
+            // Play a pling the very first frame the star becomes visible
+            if note_active && !state.menu_star_played {
+                state.menu_star_played = true;
+                game::play_sound("menu_pling");
+            }
             let note_alpha = if note_active {
                 // Smooth pulsing fade: sine wave between 0.05 and 1.0 (9.0 instead of 3.0 for 3x speed)
                 let t = (state.menu_timer - note_fade_start) as f64;
@@ -884,7 +892,8 @@ async fn main() {
             }
 
             // Draw Slogan (size 10, neon green)
-            // Measure the FULL slogan (with asterisk) for stable centering
+            // Vertically centred between the title baseline and the top of the first button
+            let slogan_y = (title_y + p_by) / 2.0;
             if slogan_chars > 0 || note_active {
                 let slogan_font_size = 10.0 * ui_scale;
                 let full_slogan_dim = measure_text(slogan_full, Some(&font), slogan_font_size as u16, 1.0);
@@ -893,13 +902,13 @@ async fn main() {
                 if note_active {
                     // Draw slogan base in full green
                     let base_dim = measure_text(slogan_base, Some(&font), slogan_font_size as u16, 1.0);
-                    draw_pixel_text(slogan_base, slogan_x, view_y + view_h * 0.35, slogan_font_size, Color::from_rgba(57, 255, 20, 255), &font);
+                    draw_pixel_text(slogan_base, slogan_x, slogan_y, slogan_font_size, Color::from_rgba(57, 255, 20, 255), &font);
                     // Draw the asterisk with fading alpha
                     let asterisk_x = slogan_x + base_dim.width;
                     let star_alpha = (note_alpha * 255.0) as u8;
-                    draw_pixel_text("*", asterisk_x, view_y + view_h * 0.35, slogan_font_size, Color::from_rgba(57, 255, 20, star_alpha), &font);
+                    draw_pixel_text("*", asterisk_x, slogan_y, slogan_font_size, Color::from_rgba(255, 220, 0, star_alpha), &font);
                 } else {
-                    draw_pixel_text(&slogan_display, slogan_x, view_y + view_h * 0.35, slogan_font_size, Color::from_rgba(57, 255, 20, 255), &font);
+                    draw_pixel_text(&slogan_display, slogan_x, slogan_y, slogan_font_size, Color::from_rgba(57, 255, 20, 255), &font);
                 }
             }
 
@@ -1002,7 +1011,7 @@ async fn main() {
                 let note_font_size = 7.0 * ui_scale;
                 let note_dim = measure_text(note_text, Some(&font), note_font_size as u16, 1.0);
                 let na = (note_alpha * 255.0) as u8;
-                draw_pixel_text(note_text, cx - note_dim.width / 2.0, view_y + view_h * 0.85, note_font_size, Color::from_rgba(148, 163, 184, na), &font);
+                draw_pixel_text(note_text, cx - note_dim.width / 2.0, view_y + view_h * 0.85, note_font_size, Color::from_rgba(255, 220, 0, na), &font);
             }
         } else {
             // ==========================================

@@ -463,6 +463,11 @@
     <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
     <script>
         let menuActive = true; // Starts in main menu
+        let startupJingle = new Audio('src/assets/rightsiders_startup.ogg');
+        startupJingle.volume = 0.75;
+        // Set when WASM calls set_menu_active(true) before the user has clicked
+        // (no audio context yet, so we defer playback to the startBtn gesture)
+        let pendingMenuJingle = false;
 
         // Hide loader when WASM starts and manage canvas focus
         window.addEventListener('load', () => {
@@ -618,6 +623,14 @@
                     gameStarted = true;
                     initAudio();
 
+                    // Play the deferred menu jingle now that we have a user gesture
+                    // (pendingMenuJingle is set by set_menu_active(true) before the first click)
+                    if (pendingMenuJingle) {
+                        pendingMenuJingle = false;
+                        startupJingle.currentTime = 0;
+                        startupJingle.play().catch(() => {});
+                    }
+
                     // Focus canvas
                     const canvas = document.getElementById("glcanvas");
                     if (canvas) {
@@ -699,6 +712,21 @@
                         } else {
                             helpOverlay.classList.remove("open");
                         }
+                    }
+                    // Play startup jingle when menu opens, stop when game starts
+                    if (menuActive) {
+                        if (gameStarted) {
+                            // Audio context exists — play immediately
+                            startupJingle.currentTime = 0;
+                            startupJingle.play().catch(() => {});
+                        } else {
+                            // No user gesture yet — defer to startBtn click
+                            pendingMenuJingle = true;
+                        }
+                    } else {
+                        pendingMenuJingle = false;
+                        startupJingle.pause();
+                        startupJingle.currentTime = 0;
                     }
                 };
                 importObject.env.report_game_over_js = (score) => {
@@ -816,14 +844,14 @@
                 noise.stop(now + 0.22);
             } 
             else if (type === 'impact') {
-                // Deeper and louder retro landing impact thud
+                // Snappy retro landing impact thud - higher and louder
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'triangle';
-                osc.frequency.setValueAtTime(100, now);
-                osc.frequency.linearRampToValueAtTime(20, now + 0.12);
+                osc.frequency.setValueAtTime(200, now);
+                osc.frequency.linearRampToValueAtTime(40, now + 0.12);
 
-                gain.gain.setValueAtTime(0.40, now);
+                gain.gain.setValueAtTime(0.55, now);
                 gain.gain.linearRampToValueAtTime(0.001, now + 0.12);
 
                 osc.connect(gain);
@@ -845,6 +873,23 @@
                 gain.connect(audioCtx.destination);
                 osc.start(now);
                 osc.stop(now + 0.015);
+            }
+            else if (type === 'menu_pling') {
+                // Light bell-like pling for the asterisk appearance
+                // Two slightly detuned sines for a natural chime shimmer
+                for (const detune of [0, 7]) {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1760 + detune, now); // A6 + slight detune
+                    gain.gain.setValueAtTime(0.0, now);
+                    gain.gain.linearRampToValueAtTime(0.14, now + 0.008); // snappy attack
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);  // airy bell decay
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.56);
+                }
             }
             else if (type === 'menu_explosion') {
                 // Retro 8-bit sci-fi impact blast for main menu landing
@@ -929,22 +974,22 @@
                 osc.stop(now + 0.16);
             }
             else if (type.startsWith('countdown_beep')) {
-                // High-pitched retro warning beep, pitch increases as seconds decrease
+                // Warning beep, pitch rises as seconds decrease
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'sine';
                 
-                let freq = 1200;
+                let freq = 500;
                 const parts = type.split('_');
                 if (parts.length > 2) {
                     const sec = parseInt(parts[2]);
                     if (!isNaN(sec) && sec >= 1 && sec <= 10) {
-                        freq = 1000 + (10 - sec) * 150; // 1000 Hz at 10s, scaling up to 2350 Hz at 1s
+                        freq = 400 + (10 - sec) * 80; // 400 Hz at 10s, rising to 1120 Hz at 1s
                     }
                 }
                 osc.frequency.setValueAtTime(freq, now);
                 
-                gain.gain.setValueAtTime(0.18, now);
+                gain.gain.setValueAtTime(0.22, now);
                 gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
                 
                 osc.connect(gain);
