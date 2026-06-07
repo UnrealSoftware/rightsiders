@@ -310,11 +310,11 @@ async fn main() {
 
                 // W / S to adjust speed (x2 or 0.5x)
                 if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
-                    state.player.speed = 3.0; // x2 speed
+                    state.player.speed = 6.0; // x2 speed
                 } else if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
-                    state.player.speed = 0.75; // 0.5x speed
+                    state.player.speed = 1.5; // 0.5x speed
                 } else {
-                    state.player.speed = 1.5; // normal speed
+                    state.player.speed = 3.0; // normal speed
                 }
 
                 // Shooting: Spacebar only
@@ -397,7 +397,7 @@ async fn main() {
         for (idx, citizen) in state.citizens.iter().enumerate() {
             let is_targeted = state.player.target_idx == Some(idx);
             let target_color = if is_targeted {
-                if citizen.is_leftsider || citizen.is_rebel {
+                if citizen.is_leftsider {
                     0xff007fff // Neon Pink
                 } else {
                     0x39ff14ff // Neon Green
@@ -619,6 +619,7 @@ async fn main() {
             // Spawn explosion particles once when title lands
             if title_landed && !state.menu_title_landed {
                 state.menu_title_landed = true;
+                game::play_sound("menu_explosion");
                 // Spawn burst of particles at the collision point
                 let collision_x = cx; // center of screen where the two halves meet
                 let collision_y = view_y + view_h * 0.25;
@@ -843,254 +844,250 @@ async fn main() {
             // ==========================================
             // HUD RETICLE & CORE INTERFACES
             // ==========================================
-        let cx = view_x + view_w / 2.0;
-        let cy = view_y + view_h / 2.0;
+            let cx = view_x + view_w / 2.0;
+            let cy = view_y + view_h / 2.0;
 
-        // Center holographic reticle
-        let target_found = state.player.target_idx.is_some();
-        let reticle_color = if target_found {
-            let target = &state.citizens[state.player.target_idx.unwrap()];
-            // Red for Leftsiders/rebels, green for compliant
-            if target.is_leftsider || target.is_rebel {
-                Color::from_rgba(255, 0, 127, 200) // Neon Pink (Criminal)
-            } else {
-                Color::from_rgba(57, 255, 20, 200)  // Neon Green (Compliant)
-            }
-        } else {
-            Color::from_rgba(0, 240, 255, 150) // Cyan (Searching)
-        };
-
-        // Reticle shapes (pixel-art texture scaled up with Nearest filtering)
-        let ch_size = (32.0 * ui_scale).round();
-        let ch_x = (cx - ch_size / 2.0).round();
-        let ch_y = (cy - ch_size / 2.0).round();
-
-        draw_texture_ex(
-            &crosshair_tex,
-            ch_x,
-            ch_y,
-            reticle_color,
-            DrawTextureParams {
-                dest_size: Some(vec2(ch_size, ch_size)),
-                ..Default::default()
-            }
-        );
-
-        // Biometric Scanner Window (Top-Left)
-        if target_found {
-            let target = &state.citizens[state.player.target_idx.unwrap()];
-            let is_criminal = target.is_leftsider || target.is_rebel;
-            let hud_theme = if is_criminal {
-                Color::from_rgba(255, 0, 127, 220) // Red/pink theme
-            } else {
-                Color::from_rgba(57, 255, 20, 220)  // Green theme
-            };
-
-            let font_size = 4.0 * ui_scale; // Half font size as requested
-
-            // Define lines of text to draw
-            let line1 = "BIOMETRIC SCAN ACQUIRED";
-            let line2 = format!("NAME: {}", target.name);
-            let line3 = format!("REG : {}", target.id_num);
-            
-            let tile = state.map.get_tile(target.x, target.y);
-            let location_str = match tile {
-                TileType::SidewalkVert => "SIDEWALK (VERT)",
-                TileType::SidewalkHoriz => "SIDEWALK (HORIZ)",
-                TileType::Intersection => "INTERSECTION",
-                TileType::Road => "STREET ROADWAY",
-                _ => "UNKNOWN ZONE",
-            };
-            let line4 = format!("LOC : {}", location_str);
-
-            let line5 = if is_criminal {
-                if target.is_rebel {
-                    "STATUS: REBEL / SHOOT TO KILL"
+            // Center holographic reticle
+            let target_found = state.player.target_idx.is_some();
+            let reticle_color = if target_found {
+                let target = &state.citizens[state.player.target_idx.unwrap()];
+                // Red for Leftsiders/rebels, green for compliant
+                if target.is_leftsider {
+                    Color::from_rgba(255, 0, 127, 200) // Neon Pink (Criminal)
                 } else {
-                    "STATUS: RIGHT-SIDE VIOLATION"
+                    Color::from_rgba(57, 255, 20, 200)  // Neon Green (Compliant)
                 }
             } else {
-                "STATUS: COMPLIANT CITIZEN"
+                Color::from_rgba(0, 240, 255, 150) // Cyan (Searching)
             };
 
-            // Measure longest line to dynamically size width
-            let d1 = measure_text(line1, Some(&font), font_size as u16, 1.0);
-            let d2 = measure_text(&line2, Some(&font), font_size as u16, 1.0);
-            let d3 = measure_text(&line3, Some(&font), font_size as u16, 1.0);
-            let d4 = measure_text(&line4, Some(&font), font_size as u16, 1.0);
-            let d5 = measure_text(&line5, Some(&font), font_size as u16, 1.0);
+            // Reticle shapes (pixel-art texture scaled up with Nearest filtering)
+            let ch_size = (32.0 * ui_scale).round();
+            let ch_x = (cx - ch_size / 2.0).round();
+            let ch_y = (cy - ch_size / 2.0).round();
 
-            let max_w = d1.width
-                .max(d2.width)
-                .max(d3.width)
-                .max(d4.width)
-                .max(d5.width);
-
-            // Window border (tighter fit for half font size)
-            let wx = view_x + 15.0 * ui_scale;
-            let wy = view_y + 15.0 * ui_scale;
-            let win_w = max_w + 16.0 * ui_scale;
-            let win_h = 56.0 * ui_scale;
-
-            draw_rectangle(wx, wy, win_w, win_h, Color::from_rgba(10, 15, 25, 200));
-            draw_pixel_rect_lines(wx, wy, win_w, win_h, 2.0 * ui_scale, hud_theme);
-
-            // Typewriter typing progression
-            let speed = 450.0; // 450 characters per second (5x faster)
-            let chars_left = (state.focus_text_timer * speed) as usize;
-
-            let process_line = |full_str: &str, chars_left: &mut usize| -> Option<String> {
-                let len = full_str.len();
-                if *chars_left == 0 {
-                    None
-                } else if *chars_left >= len {
-                    *chars_left -= len;
-                    Some(full_str.to_string())
-                } else {
-                    let show_len = *chars_left;
-                    *chars_left = 0;
-                    let mut visible = full_str[0..show_len].to_string();
-                    if (get_time() * 12.0) as i32 % 2 == 0 {
-                        visible.push('_');
-                    }
-                    Some(visible)
+            draw_texture_ex(
+                &crosshair_tex,
+                ch_x,
+                ch_y,
+                reticle_color,
+                DrawTextureParams {
+                    dest_size: Some(vec2(ch_size, ch_size)),
+                    ..Default::default()
                 }
-            };
-
-            let mut c_left = chars_left;
-            let draw_l1 = process_line(line1, &mut c_left);
-            let draw_l2 = process_line(&line2, &mut c_left);
-            let draw_l3 = process_line(&line3, &mut c_left);
-            let draw_l4 = process_line(&line4, &mut c_left);
-            let mut draw_l5 = process_line(&line5, &mut c_left);
-
-            // If typing is fully completed, add a slow flashing cursor at the end of line 5
-            let total_len = line1.len() + line2.len() + line3.len() + line4.len() + line5.len();
-            if chars_left >= total_len {
-                if let Some(ref mut text) = draw_l5 {
-                    if (get_time() * 3.0) as i32 % 2 == 0 {
-                        text.push('_');
-                    }
-                }
-            }
-
-            // Scanner Details Text (adjusted offsets and drawn letter-by-letter)
-            let padding_x = 8.0 * ui_scale;
-            let line_y = 9.0 * ui_scale;
-
-            if let Some(text) = draw_l1 {
-                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale, font_size, hud_theme, &font);
-            }
-            if let Some(text) = draw_l2 {
-                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y, font_size, WHITE, &font);
-            }
-            if let Some(text) = draw_l3 {
-                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 2.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
-            }
-            if let Some(text) = draw_l4 {
-                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 3.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
-            }
-            if let Some(text) = draw_l5 {
-                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 4.0, font_size, hud_theme, &font);
-            }
-        }
-
-        // Firing logs / Compliance banner (Top-Center)
-        if let Some((ref text, color, _)) = state.credits_flash {
-            let r = ((color >> 24) & 0xff) as u8;
-            let g = ((color >> 16) & 0xff) as u8;
-            let b = ((color >> 8) & 0xff) as u8;
-            let flash_c = Color::from_rgba(r, g, b, 255);
-
-            let font_size = 8.0 * ui_scale;
-            let text_dim = measure_text(text, Some(&font), font_size as u16, 1.0);
-            let banner_w = text_dim.width + 30.0 * ui_scale;
-            let banner_h = text_dim.height + 16.0 * ui_scale;
-            let bx = view_x + (view_w - banner_w) / 2.0;
-            let by = view_y + 20.0 * ui_scale;
-
-            draw_rectangle(bx, by, banner_w, banner_h, Color::from_rgba(0, 0, 0, 220));
-            draw_pixel_rect_lines(bx, by, banner_w, banner_h, 2.0 * ui_scale, flash_c);
-            draw_pixel_text(
-                text,
-                bx + 15.0 * ui_scale,
-                by + banner_h / 2.0 + text_dim.height / 2.0 - 2.0,
-                font_size,
-                flash_c,
-                &font,
             );
-        }
 
-        // (Mini-map interface removed as requested)
+            // Biometric Scanner Window (Top-Left)
+            if target_found {
+                let target = &state.citizens[state.player.target_idx.unwrap()];
+                let is_criminal = target.is_leftsider;
+                let hud_theme = if is_criminal {
+                    Color::from_rgba(255, 0, 127, 220) // Red/pink theme
+                } else {
+                    Color::from_rgba(57, 255, 20, 220)  // Green theme
+                };
 
-        // ==========================================
-        // PLAYER BUDGET DISPLAY (Bottom Left Panel)
-        // ==========================================
-        let font_value_size = 8.0 * ui_scale;
+                let font_size = 4.0 * ui_scale; // Half font size as requested
 
-        let val_str = format!("{} CR", state.player.credits);
-        let val_dim = measure_text(&val_str, Some(&font), (font_value_size * 1.3) as u16, 1.0);
+                // Define lines of text to draw
+                let line1 = "BIOMETRIC SCAN ACQUIRED";
+                let line2 = format!("NAME: {}", target.name);
+                let line3 = format!("REG : {}", target.id_num);
 
-        // Size the panel dynamically based on content width (tightly fit)
-        let panel_w = (val_dim.width + 16.0 * ui_scale).round();
-        let panel_h = (val_dim.height + 12.0 * ui_scale).round();
+                let tile = state.map.get_tile(target.x, target.y);
+                let location_str = match tile {
+                    TileType::SidewalkVert => "SIDEWALK (VERT)",
+                    TileType::SidewalkHoriz => "SIDEWALK (HORIZ)",
+                    TileType::Intersection => "INTERSECTION",
+                    TileType::Road => "STREET ROADWAY",
+                    _ => "UNKNOWN ZONE",
+                };
+                let line4 = format!("LOC : {}", location_str);
 
-        let px = (view_x + 15.0 * ui_scale).round();
-        let py = (view_y + view_h - panel_h - 15.0 * ui_scale).round();
+                let line5 = if is_criminal {
+                    "STATUS: TRAFFIC OFFENDER"
+                } else {
+                    "STATUS: COMPLIANT"
+                };
 
-        draw_rectangle(px, py, panel_w, panel_h, Color::from_rgba(10, 15, 25, 220));
-        draw_pixel_rect_lines(px, py, panel_w, panel_h, 2.0 * ui_scale, Color::from_rgba(0, 240, 255, 180));
+                // Measure longest line to dynamically size width
+                let d1 = measure_text(line1, Some(&font), font_size as u16, 1.0);
+                let d2 = measure_text(&line2, Some(&font), font_size as u16, 1.0);
+                let d3 = measure_text(&line3, Some(&font), font_size as u16, 1.0);
+                let d4 = measure_text(&line4, Some(&font), font_size as u16, 1.0);
+                let d5 = measure_text(&line5, Some(&font), font_size as u16, 1.0);
 
-        let credits_col = if state.player.credits < 0 {
-            Color::from_rgba(255, 0, 127, 255) // Red negative budget
-        } else {
-            Color::from_rgba(57, 255, 20, 255)  // Green positive budget
-        };
+                let max_w = d1.width
+                    .max(d2.width)
+                    .max(d3.width)
+                    .max(d4.width)
+                    .max(d5.width);
 
-        draw_pixel_text(&val_str, px + 8.0 * ui_scale, py + val_dim.height + 5.0 * ui_scale, font_value_size * 1.3, credits_col, &font);
+                // Window border (tighter fit for half font size)
+                let wx = view_x + 15.0 * ui_scale;
+                let wy = view_y + 15.0 * ui_scale;
+                let win_w = max_w + 16.0 * ui_scale;
+                let win_h = 56.0 * ui_scale;
 
-        // Weapon sprite rendering removed as requested
+                draw_rectangle(wx, wy, win_w, win_h, Color::from_rgba(10, 15, 25, 200));
+                draw_pixel_rect_lines(wx, wy, win_w, win_h, 2.0 * ui_scale, hud_theme);
 
-        // ==========================================
-        // GAME OVER / SIMULATION FAIL OVERLAY
-        // ==========================================
-        if is_game_over {
-            draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(20, 0, 5, 220));
+                // Typewriter typing progression
+                let speed = 450.0; // 450 characters per second (5x faster)
+                let chars_left = (state.focus_text_timer * speed) as usize;
 
-            let size1 = 12.0 * ui_scale;
-            let size2 = 8.0 * ui_scale;
-            let size3 = 9.0 * ui_scale;
+                let process_line = |full_str: &str, chars_left: &mut usize| -> Option<String> {
+                    let len = full_str.len();
+                    if *chars_left == 0 {
+                        None
+                    } else if *chars_left >= len {
+                        *chars_left -= len;
+                        Some(full_str.to_string())
+                    } else {
+                        let show_len = *chars_left;
+                        *chars_left = 0;
+                        let mut visible = full_str[0..show_len].to_string();
+                        if (get_time() * 12.0) as i32 % 2 == 0 {
+                            visible.push('_');
+                        }
+                        Some(visible)
+                    }
+                };
 
-            let t1 = "REU-99 INTEGRITY CRITICAL // SIM TERMINATED";
-            let t2 = "REBEL UNIT DEPLOYED LETHAL FORCE";
-            let t3 = "PRESS 'R' TO REBOOT SYSTEM AND TRY AGAIN";
+                let mut c_left = chars_left;
+                let draw_l1 = process_line(line1, &mut c_left);
+                let draw_l2 = process_line(&line2, &mut c_left);
+                let draw_l3 = process_line(&line3, &mut c_left);
+                let draw_l4 = process_line(&line4, &mut c_left);
+                let mut draw_l5 = process_line(&line5, &mut c_left);
 
-            let dim1 = measure_text(t1, Some(&font), size1 as u16, 1.0);
-            let dim2 = measure_text(t2, Some(&font), size2 as u16, 1.0);
-            let dim3 = measure_text(t3, Some(&font), size3 as u16, 1.0);
+                // If typing is fully completed, add a slow flashing cursor at the end of line 5
+                let total_len = line1.len() + line2.len() + line3.len() + line4.len() + line5.len();
+                if chars_left >= total_len {
+                    if let Some(ref mut text) = draw_l5 {
+                        if (get_time() * 3.0) as i32 % 2 == 0 {
+                            text.push('_');
+                        }
+                    }
+                }
 
-            draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
-            draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
-            draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
-        } else if is_bankrupt {
-            draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(20, 0, 5, 220));
+                // Scanner Details Text (adjusted offsets and drawn letter-by-letter)
+                let padding_x = 8.0 * ui_scale;
+                let line_y = 9.0 * ui_scale;
 
-            let size1 = 11.0 * ui_scale;
-            let size2 = 7.0 * ui_scale;
-            let size3 = 9.0 * ui_scale;
+                if let Some(text) = draw_l1 {
+                    draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale, font_size, hud_theme, &font);
+                }
+                if let Some(text) = draw_l2 {
+                    draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y, font_size, WHITE, &font);
+                }
+                if let Some(text) = draw_l3 {
+                    draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 2.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
+                }
+                if let Some(text) = draw_l4 {
+                    draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 3.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
+                }
+                if let Some(text) = draw_l5 {
+                    draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 4.0, font_size, hud_theme, &font);
+                }
+            }
 
-            let t1 = "BUDGET BALANCE LIMIT EXCEEDED // DECOMMISSIONED";
-            let t2 = "COLLATERAL DAMAGE LIABILITIES SURPASSED POLICE FUNDS";
-            let t3 = "PRESS 'R' TO REBOOT SYSTEM AND TRY AGAIN";
+            // Firing logs / Compliance banner (Top-Center)
+            if let Some((ref text, color, _)) = state.credits_flash {
+                let r = ((color >> 24) & 0xff) as u8;
+                let g = ((color >> 16) & 0xff) as u8;
+                let b = ((color >> 8) & 0xff) as u8;
+                let flash_c = Color::from_rgba(r, g, b, 255);
 
-            let dim1 = measure_text(t1, Some(&font), size1 as u16, 1.0);
-            let dim2 = measure_text(t2, Some(&font), size2 as u16, 1.0);
-            let dim3 = measure_text(t3, Some(&font), size3 as u16, 1.0);
+                let font_size = 8.0 * ui_scale;
+                let text_dim = measure_text(text, Some(&font), font_size as u16, 1.0);
+                let banner_w = text_dim.width + 30.0 * ui_scale;
+                let banner_h = text_dim.height + 16.0 * ui_scale;
+                let bx = view_x + (view_w - banner_w) / 2.0;
+                let by = view_y + 20.0 * ui_scale;
 
-            draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
-            draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
-            draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
-        }
+                draw_rectangle(bx, by, banner_w, banner_h, Color::from_rgba(0, 0, 0, 220));
+                draw_pixel_rect_lines(bx, by, banner_w, banner_h, 2.0 * ui_scale, flash_c);
+                draw_pixel_text(
+                    text,
+                    bx + 15.0 * ui_scale,
+                    by + banner_h / 2.0 + text_dim.height / 2.0 - 2.0,
+                    font_size,
+                    flash_c,
+                    &font,
+                );
+            }
+
+            // (Mini-map interface removed as requested)
+
+            // ==========================================
+            // PLAYER BUDGET DISPLAY (Bottom Left Panel)
+            // ==========================================
+            let font_value_size = 8.0 * ui_scale;
+
+            let val_str = format!("{} CR", state.player.credits);
+            let val_dim = measure_text(&val_str, Some(&font), (font_value_size * 1.3) as u16, 1.0);
+
+            // Size the panel dynamically based on content width (tightly fit)
+            let panel_w = (val_dim.width + 16.0 * ui_scale).round();
+            let panel_h = (val_dim.height + 12.0 * ui_scale).round();
+
+            let px = (view_x + 15.0 * ui_scale).round();
+            let py = (view_y + view_h - panel_h - 15.0 * ui_scale).round();
+
+            draw_rectangle(px, py, panel_w, panel_h, Color::from_rgba(10, 15, 25, 220));
+            draw_pixel_rect_lines(px, py, panel_w, panel_h, 2.0 * ui_scale, Color::from_rgba(0, 240, 255, 180));
+
+            let credits_col = if state.player.credits < 0 {
+                Color::from_rgba(255, 0, 127, 255) // Red negative budget
+            } else {
+                Color::from_rgba(57, 255, 20, 255)  // Green positive budget
+            };
+
+            draw_pixel_text(&val_str, px + 8.0 * ui_scale, py + val_dim.height + 5.0 * ui_scale, font_value_size * 1.3, credits_col, &font);
+
+            // Weapon sprite rendering removed as requested
+
+            // ==========================================
+            // GAME OVER / SIMULATION FAIL OVERLAY
+            // ==========================================
+            if is_game_over {
+                draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(20, 0, 5, 220));
+
+                let size1 = 12.0 * ui_scale;
+                let size2 = 8.0 * ui_scale;
+                let size3 = 9.0 * ui_scale;
+
+                let t1 = "REU-99 INTEGRITY CRITICAL // SIM TERMINATED";
+                let t2 = "REBEL UNIT DEPLOYED LETHAL FORCE";
+                let t3 = "PRESS 'R' TO REBOOT SYSTEM AND TRY AGAIN";
+
+                let dim1 = measure_text(t1, Some(&font), size1 as u16, 1.0);
+                let dim2 = measure_text(t2, Some(&font), size2 as u16, 1.0);
+                let dim3 = measure_text(t3, Some(&font), size3 as u16, 1.0);
+
+                draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
+                draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
+                draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
+            } else if is_bankrupt {
+                draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(20, 0, 5, 220));
+
+                let size1 = 11.0 * ui_scale;
+                let size2 = 7.0 * ui_scale;
+                let size3 = 9.0 * ui_scale;
+
+                let t1 = "BUDGET BALANCE LIMIT EXCEEDED // DECOMMISSIONED";
+                let t2 = "COLLATERAL DAMAGE LIABILITIES SURPASSED POLICE FUNDS";
+                let t3 = "PRESS 'R' TO REBOOT SYSTEM AND TRY AGAIN";
+
+                let dim1 = measure_text(t1, Some(&font), size1 as u16, 1.0);
+                let dim2 = measure_text(t2, Some(&font), size2 as u16, 1.0);
+                let dim3 = measure_text(t3, Some(&font), size3 as u16, 1.0);
+
+                draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
+                draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
+                draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
+            }
         }
         
         next_frame().await;

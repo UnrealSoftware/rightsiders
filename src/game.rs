@@ -91,7 +91,6 @@ pub struct Citizen {
     pub progress: f32,
     pub speed: f32,
     pub is_leftsider: bool, // Offsets left (criminal) or right (compliant)
-    pub is_rebel: bool,      // Armed rebel who attacks the player
     pub health: f32,
     pub state: CitizenState,
     pub shoot_cooldown: f32,
@@ -372,7 +371,7 @@ impl GameState {
             next_tx,
             next_ty,
             progress: 0.0,
-            speed: 1.5,
+            speed: 3.0,
             is_leftsider: false,
             lane_offset: 0.22,
             view_angle: std::f32::consts::FRAC_PI_2,
@@ -415,11 +414,10 @@ impl GameState {
         // - 40% Leftsider violators (is_rebel = false, is_leftsider = true)
         // - 60% Compliant Rightsiders (is_rebel = false, is_leftsider = false)
         let roll = val % 100;
-        let is_rebel = false;
         let is_leftsider = roll < 40;
 
         // Generate names
-        let name_prefix = if is_rebel { "REBEL-" } else { "CITIZEN-" };
+        let name_prefix = "CITIZEN-";
         let name_char = ((val >> 8) % 26 + 65) as u8 as char;
         let name_num = (val >> 16) % 900 + 100;
         let name = format!("{}{}{}", name_prefix, name_char, name_num);
@@ -444,7 +442,6 @@ impl GameState {
             progress: 0.0,
             speed,
             is_leftsider,
-            is_rebel,
             health: 100.0,
             state: CitizenState::Walking,
             shoot_cooldown: 0.5 + rng_float(&mut self.rng_state) * 1.5,
@@ -521,11 +518,32 @@ impl GameState {
         }
 
         // Focus scan window typing animation update
+        let mut play_tick = false;
         if self.player.target_idx != self.focus_target_idx {
             self.focus_target_idx = self.player.target_idx;
             self.focus_text_timer = 0.0;
+            if self.player.target_idx.is_some() {
+                play_tick = true;
+            }
+        } else if self.player.target_idx.is_some() {
+            let speed = 450.0;
+            let prev_chars = (self.focus_text_timer * speed) as usize;
+            self.focus_text_timer += dt;
+            let cur_chars = (self.focus_text_timer * speed) as usize;
+
+            // Total length of target info text is roughly 90-100 characters.
+            // Play a tick every 4 characters during typing to create a high-speed chirping zipper effect.
+            if cur_chars > prev_chars && cur_chars <= 100 {
+                if cur_chars % 4 == 0 {
+                    play_tick = true;
+                }
+            }
         } else {
             self.focus_text_timer += dt;
+        }
+
+        if play_tick {
+            play_sound("scan_tick");
         }
 
         // Update player auto-movement and camera orientation
@@ -669,6 +687,12 @@ impl GameState {
                 
                 // Spawn a blood decal on floor contact with reduced probability
                 let is_sprinkle = p.p_type == ParticleType::BloodSprinkle;
+
+                // Play meat landing impact sound less frequently:
+                // Only on GoreDebris, falling fast (vz < -0.5), only on first impact, and with 33% chance.
+                if p.p_type == ParticleType::GoreDebris && p.vz < -0.5 && p.first_impact && (next_rng(&mut self.rng_state) % 3 == 0) {
+                    play_sound("impact");
+                }
                 let should_spawn = if is_sprinkle {
                     // 30% chance for sprinkles
                     (next_rng(&mut self.rng_state) % 10) < 3
@@ -901,7 +925,7 @@ impl GameState {
                         let (nx, ny) = pick_next_tile(&self.map, &mut temp_rng, tx, ty, old_prev_x, old_prev_y);
                         
                         let switch_roll = next_rng(&mut temp_rng) % 100;
-                        let switch = !citizen.is_rebel && (switch_roll < 10);
+                        let switch = switch_roll < 10;
                         
                         (tx, ty, old_prev_x, old_prev_y, nx, ny, 0.0, Some((switch, temp_rng)))
                     } else {
@@ -939,45 +963,10 @@ impl GameState {
             let mut explode_done = false;
 
             {
-                let player_x = self.player.x;
-                let player_y = self.player.y;
                 let citizen = &mut self.citizens[i];
 
                 match citizen.state {
-                    CitizenState::Walking => {
-                        if citizen.is_rebel && !self.is_in_menu {
-                            let dx = player_x - citizen.x;
-                            let dy = player_y - citizen.y;
-                            let dist = (dx*dx + dy*dy).sqrt();
-
-                            if dist < 7.0 {
-                                // Simple line of sight check
-                                let steps = 15;
-                                let mut has_los = true;
-                                for step in 1..steps {
-                                    let t = step as f32 / steps as f32;
-                                    let check_x = citizen.x + dx * t;
-                                    let check_y = citizen.y + dy * t;
-                                    if self.map.is_solid(check_x, check_y) {
-                                        has_los = false;
-                                        break;
-                                    }
-                                }
-
-                                if has_los {
-                                    citizen.shoot_cooldown -= dt;
-                                    if citizen.shoot_cooldown <= 0.0 {
-                                        // Set cooldown using a local rng state update
-                                        let mut temp_rng = self.rng_state;
-                                        citizen.shoot_cooldown = 1.2 + rng_float(&mut temp_rng) * 1.0;
-                                        self.rng_state = temp_rng;
-
-                                        shoot_event = Some((citizen.x, citizen.y));
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    CitizenState::Walking => { }
                     CitizenState::Exploding(ref mut timer) => {
                         *timer += dt;
                         if *timer >= 0.4 {
@@ -1137,9 +1126,8 @@ impl GameState {
 
                         // Check compliance for reward/penalty
                         let is_lefty = target.is_leftsider;
-                        let is_rebel = target.is_rebel;
 
-                        if is_lefty || is_rebel {
+                        if is_lefty {
                             // Correct elimination of criminal
                             let reward = 1000;
                             self.player.credits += reward;

@@ -369,6 +369,23 @@
             90% { width: 95%; }
             100% { width: 100%; }
         }
+
+        #click-to-start:hover {
+            background: rgba(57, 255, 20, 0.25) !important;
+            box-shadow: 0 0 20px rgba(57, 255, 20, 0.6) !important;
+            color: #fff !important;
+        }
+
+        @keyframes startBlink {
+            from {
+                opacity: 0.45;
+                box-shadow: 0 0 5px rgba(57, 255, 20, 0.1);
+            }
+            to {
+                opacity: 1;
+                box-shadow: 0 0 15px rgba(57, 255, 20, 0.45);
+            }
+        }
     </style>
 </head>
 <body>
@@ -564,31 +581,96 @@
             }
 
             setTimeout(() => {
-                const loader = document.getElementById("loading");
-                if (loader) {
-                    loader.style.opacity = '0';
-                    loader.style.transition = 'opacity 0.5s ease';
-                    setTimeout(() => loader.remove(), 500);
+                const loaderBar = document.querySelector(".loader-bar-container");
+                if (loaderBar) {
+                    loaderBar.style.display = 'none';
                 }
+
+                const startBtn = document.createElement("div");
+                startBtn.id = "click-to-start";
+                startBtn.style.textAlign = "center";
+                startBtn.style.marginTop = "25px";
+                startBtn.style.padding = "12px";
+                startBtn.style.fontFamily = "'Orbitron', sans-serif";
+                startBtn.style.fontWeight = "900";
+                startBtn.style.fontSize = "16px";
+                startBtn.style.color = "var(--neon-green)";
+                startBtn.style.border = "1px solid var(--neon-green)";
+                startBtn.style.borderRadius = "4px";
+                startBtn.style.background = "rgba(57, 255, 20, 0.05)";
+                startBtn.style.cursor = "pointer";
+                startBtn.style.letterSpacing = "2px";
+                startBtn.style.animation = "startBlink 0.4s infinite alternate"; // 3x faster blink
+                startBtn.style.transition = "all 0.2s ease";
+                startBtn.textContent = "[ CLICK TO START ]";
+
+                const terminal = document.querySelector(".loader-terminal");
+                if (terminal) {
+                    terminal.appendChild(startBtn);
+                }
+
+                startBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+
+                    // Initialize audio playlist
+                    gameStarted = true;
+                    initAudio();
+
+                    // Focus canvas
+                    const canvas = document.getElementById("glcanvas");
+                    if (canvas) {
+                        canvas.focus();
+                    }
+
+                    // Fade out loader
+                    const loader = document.getElementById("loading");
+                    if (loader) {
+                        loader.style.opacity = '0';
+                        loader.style.transition = 'opacity 0.4s ease';
+                        setTimeout(() => loader.remove(), 400);
+                    }
+                });
             }, 3200);
         });
 
         // ======================================================
-        // WEB AUDIO RETRO CHIPTUNE SYNTHESIZER
+        // PLAYLIST BACKGROUND MUSIC PLAYER
         // ======================================================
         let audioCtx = null;
-        let musicInterval = null;
+        let currentAudio = null;
+        let currentTrackIndex = -1;
+        let gameStarted = false;
+        const tracks = [
+            'src/assets/lane_enforcer.mp3',
+            'src/assets/lane_patrol_override_alpha.mp3',
+            'src/assets/lane_patrol_override_beta.mp3'
+        ];
 
         function initAudio() {
+            if (!gameStarted) return;
             if (audioCtx) {
                 if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
+                    audioCtx.resume().then(() => {
+                        if (currentAudio && currentAudio.paused) {
+                            currentAudio.play().catch(() => {});
+                        }
+                    });
                 }
                 return;
             }
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             startMusic();
         }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (currentAudio) currentAudio.pause();
+            } else {
+                if (currentAudio && audioCtx && audioCtx.state !== 'suspended') {
+                    currentAudio.play().catch(() => {});
+                }
+            }
+        });
 
         // Expose a JavaScript function hook into Macroquad imports object
         miniquad_add_plugin({
@@ -677,6 +759,78 @@
                 noise.start(now);
                 noise.stop(now + 0.22);
             } 
+            else if (type === 'impact') {
+                // High-pitched retro landing impact pop/thud (less deep, lower volume)
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(220, now);
+                osc.frequency.linearRampToValueAtTime(80, now + 0.06);
+
+                gain.gain.setValueAtTime(0.12, now); // slightly louder volume (0.12 instead of 0.06)
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.06);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.07);
+            }
+            else if (type === 'scan_tick') {
+                // High-pitched barely noticeable short tick sound for UI typing
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(2200, now);
+
+                gain.gain.setValueAtTime(0.08, now); // slightly louder volume (0.08 instead of 0.03)
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.012);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.015);
+            }
+            else if (type === 'menu_explosion') {
+                // Retro 8-bit sci-fi impact blast for main menu landing
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.exponentialRampToValueAtTime(10, now + 0.4);
+
+                gain.gain.setValueAtTime(0.35, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.4);
+
+                // White noise crash
+                const bufferSize = audioCtx.sampleRate * 0.45;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2.0 - 1.0;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(800, now);
+                filter.frequency.exponentialRampToValueAtTime(150, now + 0.45);
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.22, now);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                noise.stop(now + 0.45);
+            } 
             else if (type === 'collateral') {
                 // High-pitched industrial warning alert
                 for (let delay of [0.0, 0.14]) {
@@ -720,69 +874,40 @@
             }
         }
 
-        // Chiptune background music sequencer
         function startMusic() {
-            if (musicInterval) return;
-
-            let tempo = 135;
-            let stepTime = 60 / tempo / 2; // eighth notes (0.22s)
-            let step = 0;
-
-            // Retro cyberpunk progression (Am - F - C - G)
-            const chords = [
-                [57, 60, 64], // Am
-                [53, 57, 60], // F
-                [48, 52, 55], // C
-                [55, 59, 62]  // G
-            ];
-            const bass = [
-                [33, 45], // A
-                [29, 41], // F
-                [24, 36], // C
-                [31, 43]  // G
-            ];
-
-            musicInterval = setInterval(() => {
-                if (!audioCtx || audioCtx.state === 'suspended') return;
-
-                let chordIdx = Math.floor(step / 16) % chords.length;
-                let stepInChord = step % 16;
-                let now = audioCtx.currentTime;
-
-                // Play synth bass line
-                if (stepInChord % 4 === 0 || stepInChord % 4 === 2) {
-                    let midiNote = bass[chordIdx][stepInChord % 4 === 0 ? 0 : 1];
-                    playNote(midiNote, 'triangle', 0.20, 0.20, now);
-                }
-
-                // Play arpeggiated chiming lead notes
-                if (stepInChord % 2 === 0) {
-                    let chord = chords[chordIdx];
-                    let noteIdx = stepInChord % 4;
-                    let midiNote = chord[noteIdx % chord.length] + (noteIdx === 3 ? 12 : 0);
-                    playNote(midiNote, 'sine', 0.12, 0.10, now);
-                }
-
-                step++;
-            }, stepTime * 1000);
+            if (currentAudio) return; // already playing
+            playRandomTrack();
         }
 
-        function playNote(midiNote, type, volume, duration, time) {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            const freq = Math.pow(2.0, (midiNote - 69.0) / 12.0) * 440.0;
-            
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, time);
-            
-            gain.gain.setValueAtTime(volume, time);
-            gain.gain.linearRampToValueAtTime(0.001, time + duration);
-            
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.start(time);
-            osc.stop(time + duration + 0.05);
+        function playRandomTrack() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.onended = null;
+            }
+
+            let nextIndex;
+            if (tracks.length > 1) {
+                do {
+                    nextIndex = Math.floor(Math.random() * tracks.length);
+                } while (nextIndex === currentTrackIndex);
+            } else {
+                nextIndex = 0;
+            }
+            currentTrackIndex = nextIndex;
+
+            const trackUrl = tracks[currentTrackIndex];
+            console.log("Playing track:", trackUrl);
+
+            currentAudio = new Audio(trackUrl);
+            currentAudio.volume = 0.35; // keep it at a comfortable background volume
+
+            currentAudio.play().catch(err => {
+                console.error("Audio playback error:", err);
+            });
+
+            currentAudio.onended = () => {
+                playRandomTrack();
+            };
         }
 
         // Run Macroquad WebAssembly
