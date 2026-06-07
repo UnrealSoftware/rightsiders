@@ -310,36 +310,45 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s3);
 
     // ==========================================
-    // SPRITE 4: Explode A (Robot Sparks)
+    // SPRITE 4: Explode A (Blood Burst Start)
     // ==========================================
     let mut s4 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
-    // Expanding blue and pink electric sparks
-    s4.draw_circle(32, 32, 8, c_neon_cyan);
-    s4.draw_circle(32, 32, 4, c_white);
-    s4.draw_circle(24, 20, 2, c_neon_pink);
-    s4.draw_circle(40, 24, 2, c_neon_pink);
-    s4.draw_circle(20, 40, 2, c_neon_pink);
-    s4.draw_circle(44, 44, 2, c_neon_pink);
-    // Floating random pixels
-    s4.set_pixel(15, 15, c_neon_cyan);
-    s4.set_pixel(50, 15, c_neon_pink);
-    s4.set_pixel(15, 50, c_neon_pink);
-    s4.set_pixel(50, 50, c_neon_cyan);
+    // Dark red base with crimson core and hot pink highlights
+    let c_dark_red = 0x880000ff;
+    s4.draw_circle(32, 32, 10, c_dark_red);
+    s4.draw_circle(32, 32, 6, c_red);
+    s4.draw_circle(32, 32, 2, c_neon_pink);
+    // Blood splatters shooting out
+    s4.draw_line(32, 32, 20, 20, c_red);
+    s4.draw_line(32, 32, 44, 20, c_red);
+    s4.draw_line(32, 32, 20, 44, c_red);
+    s4.draw_line(32, 32, 44, 44, c_red);
+    s4.draw_line(32, 32, 32, 12, c_dark_red);
+    s4.draw_line(32, 32, 32, 52, c_dark_red);
+    s4.draw_line(32, 32, 12, 32, c_dark_red);
+    s4.draw_line(32, 32, 52, 32, c_dark_red);
     sprites.push(s4);
 
     // ==========================================
-    // SPRITE 5: Explode B
+    // SPRITE 5: Explode B (Blood Dispersion)
     // ==========================================
     let mut s5 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
-    // Larger, fading ring of sparks
-    s5.draw_circle(32, 32, 16, c_neon_pink);
-    s5.draw_circle(32, 32, 12, c_black);
-    s5.draw_circle(32, 32, 6, c_neon_cyan);
-    s5.draw_circle(32, 32, 2, c_white);
-    s5.draw_circle(14, 14, 3, c_neon_cyan);
-    s5.draw_circle(50, 14, 3, c_neon_cyan);
-    s5.draw_circle(14, 50, 3, c_neon_cyan);
-    s5.draw_circle(50, 50, 3, c_neon_cyan);
+    // Expanding, dissipating cloud of blood mist and droplets
+    let c_dark_red = 0x880000ff;
+    s5.draw_circle(32, 32, 16, c_dark_red);
+    s5.draw_circle(32, 32, 12, c_black); // hollow center for expansion
+    s5.draw_circle(32, 32, 8, c_red);
+    s5.draw_circle(32, 32, 6, c_black); // hollow center
+    s5.draw_circle(32, 32, 3, c_neon_pink);
+    // Droplets flying further out
+    s5.draw_circle(14, 14, 2, c_red);
+    s5.draw_circle(50, 14, 2, c_red);
+    s5.draw_circle(14, 50, 2, c_red);
+    s5.draw_circle(50, 50, 2, c_red);
+    s5.draw_circle(32, 8, 2, c_dark_red);
+    s5.draw_circle(32, 56, 2, c_dark_red);
+    s5.draw_circle(8, 32, 2, c_dark_red);
+    s5.draw_circle(56, 32, 2, c_dark_red);
     sprites.push(s5);
 
     // ==========================================
@@ -432,6 +441,24 @@ pub fn generate_assets() -> GameAssets {
     s10.draw_rect(33, 43, 5, 12, c_gray);
     s10.draw_rect(33, 55, 7, 4, c_light_gray);
     sprites.push(s10);
+
+    // ==========================================
+    // SPRITE 11: Blood Sprinkle (Pixelated droplet)
+    // ==========================================
+    let mut s11 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Draw a tiny 2x2 red pixel dot at the bottom center (aligned to ground)
+    s11.draw_rect(31, 62, 2, 2, c_red);
+    sprites.push(s11);
+
+    // ==========================================
+    // SPRITE 12: Meat Chunk (Pixelated organic chunk)
+    // ==========================================
+    let mut s12 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Draw a small 4x4 red chunk with dark border at the bottom center (aligned to ground)
+    s12.draw_rect(30, 59, 4, 5, 0x550000ff); // Border
+    s12.draw_rect(31, 60, 2, 3, c_red);      // Crimson inner
+    s12.set_pixel(31, 60, 0xff5555ff);       // Highlight flesh
+    sprites.push(s12);
 
     // ==========================================
     // WEAPON 0: Robo-Blaster Idle

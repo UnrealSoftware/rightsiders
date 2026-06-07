@@ -23,6 +23,34 @@ pub enum CitizenState {
     Dead,
 }
 
+#[derive(Clone, Copy)]
+pub struct BloodDecal {
+    pub x: f32,
+    pub y: f32,
+    pub radius: f32,
+    pub lifetime: f32,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ParticleType {
+    BloodSprinkle,
+    GoreDebris,
+}
+
+#[derive(Clone)]
+pub struct Particle {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub vz: f32,
+    pub p_type: ParticleType,
+    pub bounces: u32,
+    pub lifetime: f32,
+    pub first_impact: bool,
+}
+
 pub struct Citizen {
     pub x: f32,
     pub y: f32,
@@ -274,6 +302,10 @@ pub struct GameState {
     pub credits_flash: Option<(String, u32, f32)>, // Text, Color, Duration
     pub screen_shake: f32,
     pub map: CityMap,
+    pub decals: Vec<BloodDecal>,
+    pub particles: Vec<Particle>,
+    pub focus_target_idx: Option<usize>,
+    pub focus_text_timer: f32,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -323,6 +355,10 @@ impl GameState {
             credits_flash: None,
             screen_shake: 0.0,
             map,
+            decals: Vec::new(),
+            particles: Vec::new(),
+            focus_target_idx: None,
+            focus_text_timer: 0.0,
             rng_state: 123456789,
         };
 
@@ -388,8 +424,67 @@ impl GameState {
         }
     }
 
+    /// Spawn 3D blood droplets and meat debris
+    pub fn spawn_blood_explosion(&mut self, x: f32, y: f32) {
+        // Spawn blood sprinkles (droplets)
+        let num_sprinkles = 15;
+        for _ in 0..num_sprinkles {
+            let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
+            let speed_h = 0.8 + rng_float(&mut self.rng_state) * 1.5;
+            let vx = theta.cos() * speed_h;
+            let vy = theta.sin() * speed_h;
+            let vz = 1.0 + rng_float(&mut self.rng_state) * 2.0;
+            let z = 0.1 + rng_float(&mut self.rng_state) * 0.4;
+            
+            self.particles.push(Particle {
+                x,
+                y,
+                z,
+                vx,
+                vy,
+                vz,
+                p_type: ParticleType::BloodSprinkle,
+                bounces: 1,
+                lifetime: 0.6 + rng_float(&mut self.rng_state) * 0.6,
+                first_impact: true,
+            });
+        }
+
+        // Spawn gore chunks (red meaty chunks)
+        let num_chunks = 6;
+        for _ in 0..num_chunks {
+            let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
+            let speed_h = 0.4 + rng_float(&mut self.rng_state) * 1.0;
+            let vx = theta.cos() * speed_h;
+            let vy = theta.sin() * speed_h;
+            let vz = 1.5 + rng_float(&mut self.rng_state) * 2.5;
+            let z = 0.1 + rng_float(&mut self.rng_state) * 0.4;
+            
+            self.particles.push(Particle {
+                x,
+                y,
+                z,
+                vx,
+                vy,
+                vz,
+                p_type: ParticleType::GoreDebris,
+                bounces: 3 + (next_rng(&mut self.rng_state) % 3), // Bounces 3-5 times
+                lifetime: 1.5 + rng_float(&mut self.rng_state) * 1.5,
+                first_impact: true,
+            });
+        }
+    }
+
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
+        // Focus scan window typing animation update
+        if self.player.target_idx != self.focus_target_idx {
+            self.focus_target_idx = self.player.target_idx;
+            self.focus_text_timer = 0.0;
+        } else {
+            self.focus_text_timer += dt;
+        }
+
         // Update player auto-movement and camera orientation
         if self.player.health > 0.0 {
             // Smoothly interpolate lane_offset
@@ -476,6 +571,116 @@ impl GameState {
             txt.duration -= dt;
             txt.y -= dt * 0.3; // drift upward slightly in world coordinates
             txt.duration > 0.0
+        });
+
+        // Update particles
+        let gravity = 8.5;
+        let map_w = MAP_WIDTH as f32;
+        let map_h = MAP_HEIGHT as f32;
+        
+        let mut new_decals = Vec::new();
+
+        self.particles.retain_mut(|p| {
+            p.lifetime -= dt;
+            if p.lifetime <= 0.0 {
+                return false;
+            }
+
+            p.vz -= gravity * dt;
+
+            // Physics step
+            let prev_x = p.x;
+            let prev_y = p.y;
+            let mut next_x = (p.x + p.vx * dt).rem_euclid(map_w);
+            let mut next_y = (p.y + p.vy * dt).rem_euclid(map_h);
+
+            // Wall collision check
+            if self.map.is_solid(next_x, next_y) {
+                // If moving diagonally, try sliding on X or Y
+                let slide_x = (p.x + p.vx * dt).rem_euclid(map_w);
+                let slide_y = (p.y + p.vy * dt).rem_euclid(map_h);
+                if !self.map.is_solid(slide_x, prev_y) {
+                    next_x = slide_x;
+                    next_y = prev_y;
+                    p.vy = -p.vy * 0.4;
+                } else if !self.map.is_solid(prev_x, slide_y) {
+                    next_x = prev_x;
+                    next_y = slide_y;
+                    p.vx = -p.vx * 0.4;
+                } else {
+                    // Total bounce back
+                    p.vx = -p.vx * 0.4;
+                    p.vy = -p.vy * 0.4;
+                    next_x = prev_x;
+                    next_y = prev_y;
+                }
+            }
+
+            p.x = next_x;
+            p.y = next_y;
+            p.z += p.vz * dt;
+
+            // Floor collision
+            if p.z <= 0.0 {
+                p.z = 0.0;
+                
+                // Spawn a blood decal on floor contact with reduced probability
+                let is_sprinkle = p.p_type == ParticleType::BloodSprinkle;
+                let should_spawn = if is_sprinkle {
+                    // 30% chance for sprinkles
+                    (next_rng(&mut self.rng_state) % 10) < 3
+                } else {
+                    // 50% chance only on the first impact for chunks
+                    let spawn = p.first_impact && (next_rng(&mut self.rng_state) % 2 == 0);
+                    p.first_impact = false;
+                    spawn
+                };
+
+                if should_spawn {
+                    let decal_radius = if is_sprinkle {
+                        0.05 + rng_float(&mut self.rng_state) * 0.12
+                    } else {
+                        0.12 + rng_float(&mut self.rng_state) * 0.18
+                    };
+                    
+                    new_decals.push(BloodDecal {
+                        x: p.x,
+                        y: p.y,
+                        radius: decal_radius,
+                        lifetime: 10.0 + rng_float(&mut self.rng_state) * 10.0,
+                    });
+                } else if !is_sprinkle {
+                    p.first_impact = false; // ensure it's marked as false even if not spawned
+                }
+
+                if p.bounces > 0 {
+                    p.bounces -= 1;
+                    p.vz = -p.vz * 0.45; // Restitution
+                    p.vx *= 0.5; // Friction
+                    p.vy *= 0.5;
+                } else {
+                    p.vz = 0.0;
+                    p.vx = 0.0;
+                    p.vy = 0.0;
+                }
+            }
+
+            true
+        });
+
+        // Add new decals and enforce limit of 512 decals to prevent slowdowns
+        for decal in new_decals {
+            self.decals.push(decal);
+        }
+        if self.decals.len() > 512 {
+            let excess = self.decals.len() - 512;
+            self.decals.drain(0..excess);
+        }
+
+        // Update decals lifetime
+        self.decals.retain_mut(|decal| {
+            decal.lifetime -= dt;
+            decal.lifetime > 0.0
         });
 
         // Update credits flash banner
@@ -864,61 +1069,74 @@ impl GameState {
 
         if let Some(target_idx) = self.player.target_idx {
             if target_idx < self.citizens.len() {
-                let target = &mut self.citizens[target_idx];
-                beam_end_x = target.x;
-                beam_end_y = target.y;
+                let mut target_died = false;
+                let mut tx = 0.0;
+                let mut ty = 0.0;
+                
+                {
+                    let target = &mut self.citizens[target_idx];
+                    beam_end_x = target.x;
+                    beam_end_y = target.y;
 
-                // Damage target
-                target.health -= 100.0;
-                if target.health <= 0.0 {
-                    // Kill target!
-                    target.state = CitizenState::Exploding(0.0);
-                    target.shoot_cooldown = 0.0; // reset as respawn timer
+                    // Damage target
+                    target.health -= 100.0;
+                    if target.health <= 0.0 {
+                        // Kill target!
+                        target.state = CitizenState::Exploding(0.0);
+                        target.shoot_cooldown = 0.0; // reset as respawn timer
+                        target_died = true;
+                        tx = target.x;
+                        ty = target.y;
 
-                    // Check compliance for reward/penalty
-                    let is_lefty = target.is_leftsider;
-                    let is_rebel = target.is_rebel;
+                        // Check compliance for reward/penalty
+                        let is_lefty = target.is_leftsider;
+                        let is_rebel = target.is_rebel;
 
-                    if is_lefty || is_rebel {
-                        // Correct elimination of criminal
-                        let reward = 100;
-                        self.player.credits += reward;
-                        play_sound("explosion");
-                        
-                        self.floating_texts.push(FloatingText {
-                            text: format!("+{} CR", reward),
-                            x: target.x,
-                            y: target.y - 0.4,
-                            color: 0x39ff14ff, // Neon Green
-                            duration: 1.2,
-                        });
+                        if is_lefty || is_rebel {
+                            // Correct elimination of criminal
+                            let reward = 100;
+                            self.player.credits += reward;
+                            play_sound("explosion");
+                            
+                            self.floating_texts.push(FloatingText {
+                                text: format!("+{} CR", reward),
+                                x: target.x,
+                                y: target.y - 0.4,
+                                color: 0x39ff14ff, // Neon Green
+                                duration: 1.2,
+                            });
 
-                        self.credits_flash = Some((
-                            format!("CRIMINAL ELIMINATED // +{} CR", reward),
-                            0x39ff14ff,
-                            1.5
-                        ));
-                    } else {
-                        // Collateral Damage! Shot a compliant Rightsider!
-                        let penalty = 500;
-                        self.player.credits -= penalty;
-                        self.player.damage_flash = 0.2; // Red screenshake glow
-                        play_sound("collateral");
+                            self.credits_flash = Some((
+                                format!("CRIMINAL ELIMINATED // +{} CR", reward),
+                                0x39ff14ff,
+                                1.5
+                            ));
+                        } else {
+                            // Collateral Damage! Shot a compliant Rightsider!
+                            let penalty = 500;
+                            self.player.credits -= penalty;
+                            self.player.damage_flash = 0.2; // Red screenshake glow
+                            play_sound("collateral");
 
-                        self.floating_texts.push(FloatingText {
-                            text: format!("-{} CR COLLATERAL", penalty),
-                            x: target.x,
-                            y: target.y - 0.4,
-                            color: 0xff007fff, // Neon Pink/Red
-                            duration: 1.5,
-                        });
+                            self.floating_texts.push(FloatingText {
+                                text: format!("-{} CR COLLATERAL", penalty),
+                                x: target.x,
+                                y: target.y - 0.4,
+                                color: 0xff007fff, // Neon Pink/Red
+                                duration: 1.5,
+                            });
 
-                        self.credits_flash = Some((
-                            format!("COLLATERAL DAMAGE // -{} CR", penalty),
-                            0xff007fff,
-                            1.5
-                        ));
+                            self.credits_flash = Some((
+                                format!("COLLATERAL DAMAGE // -{} CR", penalty),
+                                0xff007fff,
+                                1.5
+                            ));
+                        }
                     }
+                }
+
+                if target_died {
+                    self.spawn_blood_explosion(tx, ty);
                 }
             } else {
                 beam_end_x = self.player.x + self.player.dir_x * 8.0;

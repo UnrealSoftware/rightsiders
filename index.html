@@ -346,7 +346,7 @@
             width: 0%;
             height: 100%;
             background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
-            animation: loadProgress 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            animation: loadProgress 3.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
 
         @keyframes loadProgress {
@@ -374,12 +374,7 @@
         <div class="simulator-viewport">
             <div id="loading">
                 <div class="loader-terminal">
-                    <div class="loader-line" style="color: var(--neon-pink); font-weight: bold;">[ SYSTEM STARTUP SEQUENCE ]</div>
-                    <div class="loader-line">> BOOTING REU-99 FIRMWARE... OK</div>
-                    <div class="loader-line">> CONNECTING TO CYBER-POLICE SUITE... OK</div>
-                    <div class="loader-line">> INITIALIZING BIOMETRIC SCANNER... OK</div>
-                    <div class="loader-line">> LOADING CITY VECTOR CODES... OK</div>
-                    <div class="loader-line" style="color: var(--neon-green);">> COMPLIANCE ENFORCEMENT PROTOCOL: ACTIVE</div>
+                    <div id="startup-text-container"></div>
                     <div class="loader-bar-container">
                         <div class="loader-bar"></div>
                     </div>
@@ -475,6 +470,50 @@
                 }
             }, 100);
 
+            // Startup typewriter sequence
+            const startupLines = [
+                { text: "[ SYSTEM STARTUP SEQUENCE ]", color: "var(--neon-pink)", bold: true },
+                { text: "> BOOTING REU-99 FIRMWARE... OK", color: "" },
+                { text: "> CONNECTING TO CYBER-POLICE SUITE... OK", color: "" },
+                { text: "> INITIALIZING BIOMETRIC SCANNER... OK", color: "" },
+                { text: "> LOADING CITY VECTOR CODES... OK", color: "" },
+                { text: "> COMPLIANCE ENFORCEMENT PROTOCOL: ACTIVE", color: "var(--neon-green)", bold: true }
+            ];
+
+            const startupContainer = document.getElementById("startup-text-container");
+            let startupLineIdx = 0;
+            let startupCharIdx = 0;
+
+            function typeStartupLine() {
+                if (startupLineIdx < startupLines.length) {
+                    const line = startupLines[startupLineIdx];
+                    let lineDiv = startupContainer.children[startupLineIdx];
+                    if (!lineDiv) {
+                        lineDiv = document.createElement("div");
+                        lineDiv.className = "loader-line";
+                        if (line.color) lineDiv.style.color = line.color;
+                        if (line.bold) lineDiv.style.fontWeight = "bold";
+                        startupContainer.appendChild(lineDiv);
+                    }
+
+                    lineDiv.textContent = line.text.slice(0, startupCharIdx + 1) + "_";
+                    startupCharIdx++;
+
+                    if (startupCharIdx >= line.text.length) {
+                        lineDiv.textContent = line.text; // Remove cursor on line end
+                        startupLineIdx++;
+                        startupCharIdx = 0;
+                        setTimeout(typeStartupLine, 120); // Pause between lines
+                    } else {
+                        setTimeout(typeStartupLine, 10); // Type letter by letter very quickly
+                    }
+                }
+            }
+
+            if (startupContainer) {
+                typeStartupLine();
+            }
+
             setTimeout(() => {
                 const loader = document.getElementById("loading");
                 if (loader) {
@@ -482,7 +521,7 @@
                     loader.style.transition = 'opacity 0.5s ease';
                     setTimeout(() => loader.remove(), 500);
                 }
-            }, 2500);
+            }, 3200);
         });
 
         // ======================================================

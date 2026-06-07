@@ -2,6 +2,7 @@
 
 use crate::assets::{GameAssets, TEX_SIZE};
 use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
+use crate::game::BloodDecal;
 
 pub const WIDTH: usize = 400;
 pub const HEIGHT: usize = 300;
@@ -15,6 +16,7 @@ pub struct Raycaster {
 pub struct SpriteToRender {
     pub x: f32,
     pub y: f32,
+    pub z: f32,
     pub texture_idx: usize, // Index in assets.sprites
 }
 
@@ -52,7 +54,7 @@ impl Raycaster {
     }
 
     /// Perspective-correct floor casting to render roads, sidewalks, and lane markings
-    pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap) {
+    pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal]) {
         // Dir vectors for leftmost and rightmost rays on screen
         let ray_dir_x0 = dir_x - plane_x;
         let ray_dir_y0 = dir_y - plane_y;
@@ -144,6 +146,27 @@ impl Raycaster {
                             base_col
                         }
                     };
+
+                    // Blend blood decals (optimized mask blending)
+                    let mut is_blood = false;
+                    for decal in decals {
+                        let mut dx = floor_x - decal.x;
+                        if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+                        else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+                        let mut dy = floor_y - decal.y;
+                        if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+                        else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+                        if dx * dx + dy * dy < decal.radius * decal.radius {
+                            is_blood = true;
+                            break;
+                        }
+                    }
+
+                    if is_blood {
+                        color = 0x8a0303ff; // Solid cyber dark blood red
+                    }
 
                     // Apply distance fog to the pixel
                     if fog < 1.0 {
@@ -360,7 +383,7 @@ impl Raycaster {
             let sprite_height = (full_height as f32 * 0.6) as i32;
             let sprite_width = (full_height as f32 * 0.6) as i32;
 
-            let draw_end_y_unclamped = HEIGHT as i32 / 2 + (pos_z * full_height as f32) as i32;
+            let draw_end_y_unclamped = HEIGHT as i32 / 2 + (((pos_z - sprite.z) * full_height as f32) as i32);
             let draw_start_y_unclamped = draw_end_y_unclamped - sprite_height;
             let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
             let draw_end_y = draw_end_y_unclamped.clamp(0, HEIGHT as i32 - 1);

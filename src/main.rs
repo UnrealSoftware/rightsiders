@@ -242,6 +242,22 @@ async fn main() {
         // ==========================================
         raycaster.clear();
         
+        // Filter decals close to player for performance (only within visibility range + buffer)
+        let close_decals: Vec<crate::game::BloodDecal> = state.decals.iter()
+            .filter(|decal| {
+                let mut dx = decal.x - state.player.x;
+                if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+                else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+                let mut dy = decal.y - state.player.y;
+                if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+                else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+                dx * dx + dy * dy < 18.0 * 18.0
+            })
+            .copied()
+            .collect();
+
         // 1. Cast Floor & Sidewalk markings
         raycaster.cast_floor(
             state.player.x,
@@ -251,6 +267,7 @@ async fn main() {
             state.player.plane_x,
             state.player.plane_y,
             &state.map,
+            &close_decals,
         );
 
         // 2. Cast building walls
@@ -297,12 +314,30 @@ async fn main() {
                 CitizenState::Exploding(t) => {
                     if t < 0.2 { 4 } else { 5 }
                 }
-                CitizenState::Dead => 6,
+                CitizenState::Dead => {
+                    continue;
+                }
             };
 
             sprites_to_draw.push(SpriteToRender {
                 x: citizen.x,
                 y: citizen.y,
+                z: 0.0,
+                texture_idx: tex_idx,
+            });
+        }
+
+        // Push particles to sprite list
+        for p in &state.particles {
+            let tex_idx = match p.p_type {
+                crate::game::ParticleType::BloodSprinkle => 11,
+                crate::game::ParticleType::GoreDebris => 12,
+            };
+            
+            sprites_to_draw.push(SpriteToRender {
+                x: p.x,
+                y: p.y,
+                z: p.z,
                 texture_idx: tex_idx,
             });
         }
@@ -417,6 +452,7 @@ async fn main() {
             }
         }
 
+
         // Damage flash visual indicator
         if state.player.damage_flash > 0.0 {
             let opacity = (state.player.damage_flash * 4.0).min(0.65);
@@ -496,7 +532,7 @@ async fn main() {
                 if target.is_rebel {
                     "STATUS: REBEL / SHOOT TO KILL"
                 } else {
-                    "STATUS: LEFT-SIDE VIOLATION"
+                    "STATUS: RIGHT-SIDE VIOLATION"
                 }
             } else {
                 "STATUS: COMPLIANT CITIZEN"
@@ -507,7 +543,7 @@ async fn main() {
             let d2 = measure_text(&line2, Some(&font), font_size as u16, 1.0);
             let d3 = measure_text(&line3, Some(&font), font_size as u16, 1.0);
             let d4 = measure_text(&line4, Some(&font), font_size as u16, 1.0);
-            let d5 = measure_text(line5, Some(&font), font_size as u16, 1.0);
+            let d5 = measure_text(&line5, Some(&font), font_size as u16, 1.0);
 
             let max_w = d1.width
                 .max(d2.width)
@@ -524,14 +560,64 @@ async fn main() {
             draw_rectangle(wx, wy, win_w, win_h, Color::from_rgba(10, 15, 25, 200));
             draw_pixel_rect_lines(wx, wy, win_w, win_h, 2.0 * ui_scale, hud_theme);
 
-            // Scanner Details Text (adjusted offsets)
+            // Typewriter typing progression
+            let speed = 450.0; // 450 characters per second (5x faster)
+            let chars_left = (state.focus_text_timer * speed) as usize;
+
+            let process_line = |full_str: &str, chars_left: &mut usize| -> Option<String> {
+                let len = full_str.len();
+                if *chars_left == 0 {
+                    None
+                } else if *chars_left >= len {
+                    *chars_left -= len;
+                    Some(full_str.to_string())
+                } else {
+                    let show_len = *chars_left;
+                    *chars_left = 0;
+                    let mut visible = full_str[0..show_len].to_string();
+                    if (get_time() * 12.0) as i32 % 2 == 0 {
+                        visible.push('_');
+                    }
+                    Some(visible)
+                }
+            };
+
+            let mut c_left = chars_left;
+            let draw_l1 = process_line(line1, &mut c_left);
+            let draw_l2 = process_line(&line2, &mut c_left);
+            let draw_l3 = process_line(&line3, &mut c_left);
+            let draw_l4 = process_line(&line4, &mut c_left);
+            let mut draw_l5 = process_line(&line5, &mut c_left);
+
+            // If typing is fully completed, add a slow flashing cursor at the end of line 5
+            let total_len = line1.len() + line2.len() + line3.len() + line4.len() + line5.len();
+            if chars_left >= total_len {
+                if let Some(ref mut text) = draw_l5 {
+                    if (get_time() * 3.0) as i32 % 2 == 0 {
+                        text.push('_');
+                    }
+                }
+            }
+
+            // Scanner Details Text (adjusted offsets and drawn letter-by-letter)
             let padding_x = 8.0 * ui_scale;
             let line_y = 9.0 * ui_scale;
-            draw_pixel_text(line1, wx + padding_x, wy + 10.0 * ui_scale, font_size, hud_theme, &font);
-            draw_pixel_text(&line2, wx + padding_x, wy + 10.0 * ui_scale + line_y, font_size, WHITE, &font);
-            draw_pixel_text(&line3, wx + padding_x, wy + 10.0 * ui_scale + line_y * 2.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
-            draw_pixel_text(&line4, wx + padding_x, wy + 10.0 * ui_scale + line_y * 3.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
-            draw_pixel_text(line5, wx + padding_x, wy + 10.0 * ui_scale + line_y * 4.0, font_size, hud_theme, &font);
+
+            if let Some(text) = draw_l1 {
+                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale, font_size, hud_theme, &font);
+            }
+            if let Some(text) = draw_l2 {
+                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y, font_size, WHITE, &font);
+            }
+            if let Some(text) = draw_l3 {
+                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 2.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
+            }
+            if let Some(text) = draw_l4 {
+                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 3.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
+            }
+            if let Some(text) = draw_l5 {
+                draw_pixel_text(&text, wx + padding_x, wy + 10.0 * ui_scale + line_y * 4.0, font_size, hud_theme, &font);
+            }
         }
 
         // Firing logs / Compliance banner (Top-Center)
