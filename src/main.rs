@@ -185,6 +185,17 @@ async fn main() {
     let screen_texture = Texture2D::from_image(&screen_image);
     screen_texture.set_filter(FilterMode::Nearest);
 
+    // Create RenderTarget for off-screen low-res rendering
+    let render_target = render_target_ex(
+        WIDTH as u32,
+        HEIGHT as u32,
+        RenderTargetParams {
+            sample_count: 0,
+            depth: false,
+        },
+    );
+    render_target.texture.set_filter(FilterMode::Nearest);
+
     // Font selection (Default fallback, style elements drawn with rectangles/lines)
     let mut is_game_over = false;
     let mut is_bankrupt = false;
@@ -196,15 +207,23 @@ async fn main() {
         let screen_w = screen_width();
         let screen_h = screen_height();
 
-        // Scale UI based on window size
-        let ui_scale = (screen_w / 800.0).max(screen_h / 600.0).max(1.0) * 1.5;
+        let virtual_w = WIDTH as f32;
+        let virtual_h = HEIGHT as f32;
 
-        let cx = screen_w / 2.0;
+        // Scale UI based on virtual resolution (fixed at 1.0)
+        let ui_scale = 1.0f32;
+
+        let cx = virtual_w / 2.0;
 
         let view_x = 0.0;
         let view_y = 0.0;
-        let view_w = screen_w;
-        let view_h = screen_h;
+        let view_w = virtual_w;
+        let view_h = virtual_h;
+
+        // Scale mouse position to virtual coordinate space
+        let (mx_screen, my_screen) = mouse_position();
+        let mx = if screen_w > 0.0 { mx_screen * (virtual_w / screen_w) } else { mx_screen };
+        let my = if screen_h > 0.0 { my_screen * (virtual_h / screen_h) } else { my_screen };
 
         // Button dimensions and positions for input and rendering
         let btn_font_size = 11.0 * ui_scale;
@@ -250,7 +269,6 @@ async fn main() {
                     }
 
                     // Mouse Hover Navigation
-                    let (mx, my) = mouse_position();
                     let hover_play = mx >= p_bx && mx <= p_bx + max_btn_w && my >= p_by && my <= p_by + btn_h;
                     let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
 
@@ -452,6 +470,10 @@ async fn main() {
         // ==========================================
         // RENDERING GPU CANVAS & HUD
         // ==========================================
+        let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, virtual_w, virtual_h));
+        camera.render_target = Some(render_target.clone());
+        set_camera(&camera);
+
         clear_background(Color::from_rgba(10, 11, 16, 255));
 
         // Draw Raycaster screen with shake offset
@@ -714,7 +736,6 @@ async fn main() {
             let buttons_alpha = ((state.menu_timer - buttons_start) * 2.5).clamp(0.0, 1.0);
             if buttons_alpha > 0.01 {
                 // Determine hover states for button background brightness
-                let (mx, my) = mouse_position();
                 let hover_play = mx >= p_bx && mx <= p_bx + max_btn_w && my >= p_by && my <= p_by + btn_h;
                 let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
 
@@ -1035,6 +1056,21 @@ async fn main() {
             draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
         }
         }
+
+        // Reset camera and draw the low-res render target upscaled to the full screen
+        set_default_camera();
+        clear_background(Color::from_rgba(10, 11, 16, 255));
+        draw_texture_ex(
+            &render_target.texture,
+            0.0,
+            0.0,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(screen_w, screen_h)),
+                flip_y: true,
+                ..Default::default()
+            }
+        );
 
         next_frame().await;
     }

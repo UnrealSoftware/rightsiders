@@ -11,6 +11,9 @@ pub const VISIBILITY_DIST: f32 = 16.0;
 pub struct Raycaster {
     pub pixels: Vec<u32>,   // RGBA buffer (0xRRGGBBAA)
     pub z_buffer: Vec<f32>, // Z-buffer for occlusion
+    pub decal_grid: Vec<Vec<usize>>, // Grid mapping tile index to decal indices
+    row_distances: Vec<f32>,
+    row_fogs: Vec<f32>,
 }
 
 pub struct SpriteToRender {
@@ -22,9 +25,28 @@ pub struct SpriteToRender {
 
 impl Raycaster {
     pub fn new() -> Self {
+        let mut row_distances = Vec::with_capacity(HEIGHT);
+        let mut row_fogs = Vec::with_capacity(HEIGHT);
+        for y in 0..HEIGHT {
+            if y > HEIGHT / 2 {
+                let p = y as f32 - (HEIGHT as f32 / 2.0);
+                let pos_z = 0.4;
+                let row_dist = pos_z * (HEIGHT as f32) / p;
+                let fog = (1.0 - (row_dist / VISIBILITY_DIST)).clamp(0.0, 1.0);
+                row_distances.push(row_dist);
+                row_fogs.push(fog);
+            } else {
+                row_distances.push(0.0);
+                row_fogs.push(0.0);
+            }
+        }
+
         Self {
             pixels: vec![0; WIDTH * HEIGHT],
             z_buffer: vec![0.0; WIDTH],
+            decal_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
+            row_distances,
+            row_fogs,
         }
     }
 
@@ -55,30 +77,51 @@ impl Raycaster {
 
     /// Perspective-correct floor casting to render roads, sidewalks, and lane markings
     pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal]) {
+        // Clear the decal grid
+        for cell in &mut self.decal_grid {
+            cell.clear();
+        }
+
+        // Populate the decal grid with close decals
+        for (idx, decal) in decals.iter().enumerate() {
+            let min_tx = (decal.x - decal.radius).floor() as i32;
+            let max_tx = (decal.x + decal.radius).floor() as i32;
+            let min_ty = (decal.y - decal.radius).floor() as i32;
+            let max_ty = (decal.y + decal.radius).floor() as i32;
+
+            for cx in min_tx..=max_tx {
+                let tx = cx.rem_euclid(MAP_WIDTH as i32) as usize;
+                for cy in min_ty..=max_ty {
+                    let ty = cy.rem_euclid(MAP_HEIGHT as i32) as usize;
+                    self.decal_grid[tx * MAP_HEIGHT + ty].push(idx);
+                }
+            }
+        }
+
         // Dir vectors for leftmost and rightmost rays on screen
         let ray_dir_x0 = dir_x - plane_x;
         let ray_dir_y0 = dir_y - plane_y;
         let ray_dir_x1 = dir_x + plane_x;
         let ray_dir_y1 = dir_y + plane_y;
 
+        // Hoist the constant scaling factor
+        let inv_width = 1.0 / (WIDTH as f32);
+        let ray_diff_x = (ray_dir_x1 - ray_dir_x0) * inv_width;
+        let ray_diff_y = (ray_dir_y1 - ray_dir_y0) * inv_width;
+
         for y in (HEIGHT/2 + 1)..HEIGHT {
-            // Current y position relative to the center of the screen
-            let p = y as f32 - (HEIGHT as f32 / 2.0);
-            // Camera height (lowered to 0.4)
-            let pos_z = 0.4;
-            // Vertical distance from camera to floor row
-            let row_distance = pos_z * (HEIGHT as f32) / p;
+            // Retrieve precalculated vertical distance and fog
+            let row_distance = self.row_distances[y];
+            let fog = self.row_fogs[y];
+            let fog_int = (fog * 256.0) as u32;
 
             // Real world step coordinates for each floor pixel across the row
-            let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (WIDTH as f32);
-            let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (WIDTH as f32);
+            let floor_step_x = row_distance * ray_diff_x;
+            let floor_step_y = row_distance * ray_diff_y;
 
             // Starting real world coordinates for the leftmost pixel in the row
             let mut floor_x = player_x + row_distance * ray_dir_x0;
             let mut floor_y = player_y + row_distance * ray_dir_y0;
-
-            // Fog scaling based on row distance
-            let fog = (1.0 - (row_distance / VISIBILITY_DIST)).clamp(0.0, 1.0);
 
             for x in 0..WIDTH {
                 // Determine tile coordinate (wrapping on torus)
@@ -147,9 +190,11 @@ impl Raycaster {
                         }
                     };
 
-                    // Blend blood decals (optimized mask blending)
+                    // Blend blood decals (optimized tile-based mask blending)
                     let mut is_blood = false;
-                    for decal in decals {
+                    let cell_idx = tx * MAP_HEIGHT + ty;
+                    for &decal_idx in &self.decal_grid[cell_idx] {
+                        let decal = &decals[decal_idx];
                         let mut dx = floor_x - decal.x;
                         if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
                         else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
@@ -168,11 +213,11 @@ impl Raycaster {
                         color = 0x8a0303ff; // Solid cyber dark blood red
                     }
 
-                    // Apply distance fog to the pixel
-                    if fog < 1.0 {
-                        let r = (((color >> 24) & 0xff) as f32 * fog) as u32;
-                        let g = (((color >> 16) & 0xff) as f32 * fog) as u32;
-                        let b = (((color >> 8) & 0xff) as f32 * fog) as u32;
+                    // Apply distance fog to the pixel (optimized integer math)
+                    if fog_int < 256 {
+                        let r = (((color >> 24) & 0xff) * fog_int) >> 8;
+                        let g = (((color >> 16) & 0xff) * fog_int) >> 8;
+                        let b = (((color >> 8) & 0xff) * fog_int) >> 8;
                         color = (r << 24) | (g << 16) | (b << 8) | 0xff;
                     }
 
@@ -304,24 +349,26 @@ impl Raycaster {
             let side_shading = if side == 1 { 0.70 } else { 1.0 }; // Darken Y walls
             let fog = (1.0 - (perp_wall_dist / VISIBILITY_DIST)).clamp(0.0, 1.0);
             let intensity = side_shading * fog;
+            let intensity_int = (intensity * 256.0) as u32;
 
             // Draw the vertical strip of wall
-            for y in draw_start_clamped..draw_end_clamped {
-                // Calculate texture coordinate (Y)
-                let d = y as i32 * 256 - HEIGHT as i32 * 128 + line_height * 128;
-                let tex_y = (((d * TEX_SIZE as i32) / line_height) / 256).clamp(0, TEX_SIZE as i32 - 1) as usize;
+            let step = (TEX_SIZE as f32) / (line_height as f32);
+            let mut tex_y_fp = (draw_start_clamped as i32 - draw_start) as f32 * step;
 
+            for y in draw_start_clamped..draw_end_clamped {
+                let tex_y = (tex_y_fp as usize).min(TEX_SIZE - 1);
                 let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
 
-                // Shade pixel color components (RGBA format)
-                if intensity < 1.0 {
-                    let r = (((pixel >> 24) & 0xff) as f32 * intensity) as u32;
-                    let g = (((pixel >> 16) & 0xff) as f32 * intensity) as u32;
-                    let b = (((pixel >> 8) & 0xff) as f32 * intensity) as u32;
+                // Shade pixel color components (RGBA format using optimized integer math)
+                if intensity_int < 256 {
+                    let r = (((pixel >> 24) & 0xff) * intensity_int) >> 8;
+                    let g = (((pixel >> 16) & 0xff) * intensity_int) >> 8;
+                    let b = (((pixel >> 8) & 0xff) * intensity_int) >> 8;
                     pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
                 }
 
                 self.pixels[y * WIDTH + x] = pixel;
+                tex_y_fp += step;
             }
         }
     }
@@ -393,6 +440,9 @@ impl Raycaster {
 
             let texture = &assets.sprites[sprite.texture_idx];
             let fog = (1.0 - (transform_y / VISIBILITY_DIST)).clamp(0.0, 1.0);
+            let fog_int = (fog * 256.0) as u32;
+
+            let step_y = (TEX_SIZE as f32) / (sprite_height as f32);
 
             // Draw the sprite column by column
             for stripe in draw_start_x..draw_end_x {
@@ -404,22 +454,23 @@ impl Raycaster {
                 let tex_x = ((256 * (stripe - (-sprite_width / 2 + sprite_screen_x)) * TEX_SIZE as i32 / sprite_width) / 256)
                     .clamp(0, TEX_SIZE as i32 - 1) as usize;
 
-                for y in draw_start_y..draw_end_y {
-                    let d = (y - draw_start_y_unclamped) * 256;
-                    let tex_y = (((d * TEX_SIZE as i32) / sprite_height) / 256).clamp(0, TEX_SIZE as i32 - 1) as usize;
+                let mut tex_y_fp = (draw_start_y - draw_start_y_unclamped) as f32 * step_y;
 
+                for y in draw_start_y..draw_end_y {
+                    let tex_y = (tex_y_fp as usize).min(TEX_SIZE - 1);
                     let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
+                    tex_y_fp += step_y;
 
                     // Transparent chroma-key (Black pixels 0x00000000)
                     if (pixel & 0xff) == 0 {
                         continue;
                     }
 
-                    // Apply distance fog to sprite pixel
-                    if fog < 1.0 {
-                        let r = (((pixel >> 24) & 0xff) as f32 * fog) as u32;
-                        let g = (((pixel >> 16) & 0xff) as f32 * fog) as u32;
-                        let b = (((pixel >> 8) & 0xff) as f32 * fog) as u32;
+                    // Apply distance fog to sprite pixel (using optimized integer math)
+                    if fog_int < 256 {
+                        let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
+                        let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
+                        let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;
                         pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
                     }
 
