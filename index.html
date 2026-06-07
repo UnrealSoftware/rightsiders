@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RIGHTSIDERS // REU-99 Tactical Simulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-cyan: #00f0ff;
+            --neon-pink: #ff007f;
+            --neon-green: #39ff14;
+            --bg-dark: #0a0b10;
+            --panel-bg: rgba(16, 18, 27, 0.75);
+            --border-glow: 0 0 10px rgba(0, 240, 255, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(255, 0, 127, 0.05) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 240, 255, 0.05) 0px, transparent 50%);
+            color: #e2e8f0;
+            font-family: 'Share Tech Mono', monospace;
+            overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            border-bottom: 1px solid var(--neon-cyan);
+            background: rgba(10, 11, 16, 0.75);
+            backdrop-filter: blur(8px);
+            padding: 10px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 240, 255, 0.15);
+            z-index: 10;
+        }
+
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo span {
+            color: var(--neon-pink);
+            text-shadow: 0 0 10px rgba(ff, 0, 127, 0.5);
+        }
+
+        .status-badge {
+            font-size: 14px;
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+            padding: 4px 12px;
+            border-radius: 4px;
+            background: rgba(57, 255, 20, 0.1);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            animation: pulse 2s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { box-shadow: 0 0 5px rgba(57, 255, 20, 0.2); }
+            to { box-shadow: 0 0 15px rgba(57, 255, 20, 0.6); }
+        }
+
+        main {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* CRT Screen Frame & Container - FULLSCREEN */
+        .simulator-viewport {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+            display: block;
+            image-rendering: pixelated;
+        }
+
+        /* CRT Effects Overlay */
+        .crt-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            opacity: 0.85;
+        }
+
+        .crt-overlay::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
+        }
+
+        /* Scanline rolling effect */
+        .crt-scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(18, 16, 16, 0.1);
+            opacity: 0;
+            z-index: 6;
+            pointer-events: none;
+            animation: crt-flicker 0.15s infinite;
+        }
+
+        @keyframes crt-flicker {
+            0% { opacity: 0.15; }
+            50% { opacity: 0.18; }
+            100% { opacity: 0.15; }
+        }
+
+        /* Collapsible HUD Styles */
+        .collapsible-hud {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            width: 320px;
+            z-index: 15;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            opacity: 0;
+            transform: translateY(-10px);
+            pointer-events: none;
+        }
+        .collapsible-hud.open {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+        .hud-btn {
+            position: fixed;
+            bottom: 85px;
+            right: 20px;
+            z-index: 20;
+            background: rgba(10, 11, 16, 0.75);
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            cursor: pointer;
+            backdrop-filter: blur(8px);
+            box-shadow: var(--border-glow);
+            transition: all 0.2s ease;
+        }
+        .hud-btn:hover {
+            background: var(--neon-cyan);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
+        }
+
+        /* Panels and UI */
+        .control-panel {
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 8px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: var(--border-glow);
+            height: fit-content;
+        }
+
+        h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            color: var(--neon-cyan);
+            border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+            padding-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+
+        .lore-box {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #94a3b8;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-left: 3px solid var(--neon-pink);
+            border-radius: 0 4px 4px 0;
+        }
+
+        .instruction-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .instruction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            padding: 6px 0;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+        }
+
+        .key-badge {
+            background: #1e293b;
+            border: 1px solid #475569;
+            color: var(--neon-cyan);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            box-shadow: 0 2px 0 #0f172a;
+        }
+
+        .compliance-directive {
+            background: rgba(255, 0, 127, 0.1);
+            border: 1px solid rgba(255, 0, 127, 0.3);
+            color: #fca5a5;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .compliance-directive strong {
+            color: var(--neon-pink);
+            display: block;
+            margin-bottom: 4px;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 1px;
+        }
+
+        footer {
+            position: fixed;
+            bottom: 5px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            padding: 5px;
+            font-size: 11px;
+            color: rgba(100, 116, 139, 0.6);
+            background: transparent;
+            border-top: none;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        footer a {
+            color: var(--neon-cyan);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Loading Screen overlay */
+        #loading {
+            position: absolute;
+            background: var(--bg-dark);
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .loader-terminal {
+            width: 80%;
+            max-width: 450px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            color: var(--neon-cyan);
+            background: rgba(0, 0, 0, 0.6);
+            padding: 20px;
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            border-radius: 6px;
+            box-shadow: var(--border-glow);
+        }
+
+        .loader-line {
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            border-right: 2px solid transparent;
+        }
+
+        .loader-bar-container {
+            width: 100%;
+            height: 6px;
+            background: #1e293b;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+
+        .loader-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            animation: loadProgress 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        @keyframes loadProgress {
+            0% { width: 0%; }
+            20% { width: 15%; }
+            45% { width: 45%; }
+            65% { width: 80%; }
+            90% { width: 95%; }
+            100% { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            RIGHT<span>SIDERS</span> <span style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px;">REU-99 SIMULATOR</span>
+        </div>
+        <div class="status-badge" id="sim-status">
+            System Online
+        </div>
+    </header>
+
+    <main>
+        <div class="simulator-viewport">
+            <div id="loading">
+                <div class="loader-terminal">
+                    <div class="loader-line" style="color: var(--neon-pink); font-weight: bold;">[ SYSTEM STARTUP SEQUENCE ]</div>
+                    <div class="loader-line">> BOOTING REU-99 FIRMWARE... OK</div>
+                    <div class="loader-line">> CONNECTING TO CYBER-POLICE SUITE... OK</div>
+                    <div class="loader-line">> INITIALIZING BIOMETRIC SCANNER... OK</div>
+                    <div class="loader-line">> LOADING CITY VECTOR CODES... OK</div>
+                    <div class="loader-line" style="color: var(--neon-green);">> COMPLIANCE ENFORCEMENT PROTOCOL: ACTIVE</div>
+                    <div class="loader-bar-container">
+                        <div class="loader-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="crt-overlay"></div>
+            <div class="crt-scanlines"></div>
+            <canvas id="glcanvas" tabindex="1" style="outline: none;"></canvas>
+        </div>
+
+        <button id="toggle-help" class="hud-btn">CONTROLS [H]</button>
+
+        <div id="help-overlay" class="control-panel collapsible-hud">
+            <div>
+                <h2>Directive Overview</h2>
+                <div class="lore-box">
+                    Patrol the futuristic city streets. Ensure all citizens walk in their <strong>RIGHT-HAND LANE</strong> relative to their movement direction. If a citizen wanders onto the <strong>LEFT-HAND SIDE</strong> of the centerline, they are in violation of Civic Code 99-A. Target them with your biometric scanner and execute immediately.
+                </div>
+            </div>
+
+            <div>
+                <h2>Sim Controls</h2>
+                <ul class="instruction-list">
+                    <li class="instruction-item">
+                        <span>Move Forward/Backward</span>
+                        <span><kbd class="key-badge">W</kbd> / <kbd class="key-badge">S</kbd></span>
+                    </li>
+                    <li class="instruction-item">
+                        <span>Strafe Left/Right</span>
+                        <span><kbd class="key-badge">A</kbd> / <kbd class="key-badge">D</kbd></span>
+                    </li>
+                    <li class="instruction-item">
+                        <span>Rotate Camera</span>
+                        <span><kbd class="key-badge">Q</kbd> / <kbd class="key-badge">E</kbd></span>
+                    </li>
+                    <li class="instruction-item">
+                        <span>Fire Blaster</span>
+                        <span><kbd class="key-badge">SPACE</kbd> or <kbd class="key-badge">L-CLICK</kbd></span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="compliance-directive">
+                <strong>CRITICAL REMINDER:</strong>
+                Collateral damage is strictly penalized. Shooting compliant "Rightsiders" (walking in the Green Lane) will result in a heavy budget penalty (-500 Credits) and shield depletion. Maintain 100% vigilance!
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        RIGHTSIDERS Tactical Simulator v1.0.0 // Built on Rust + WebAssembly
+    </footer>
+
+    <!-- Macroquad Loader JS -->
+    <script src="https://not-fl3.github.io/miniquad-samples/gl.js"></script>
+    <script>
+        // Hide loader when WASM starts and manage canvas focus
+        window.addEventListener('load', () => {
+            const canvas = document.getElementById("glcanvas");
+            if (canvas) {
+                canvas.focus();
+            }
+
+            // Re-focus and initialize/resume Web Audio on first user interaction
+            const initAndFocus = () => {
+                if (canvas) canvas.focus();
+                initAudio();
+            };
+            document.body.addEventListener('click', initAndFocus);
+            document.body.addEventListener('keydown', initAndFocus);
+
+            // Handle controls panel toggle
+            const toggleBtn = document.getElementById("toggle-help");
+            const helpOverlay = document.getElementById("help-overlay");
+            
+            function toggleHelp() {
+                if (helpOverlay) helpOverlay.classList.toggle("open");
+            }
+            
+            if (toggleBtn) {
+                toggleBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    toggleHelp();
+                });
+            }
+            
+            window.addEventListener("keydown", (e) => {
+                if (e.key === 'h' || e.key === 'H') {
+                    toggleHelp();
+                }
+            });
+
+            // Open controls on start, then close after 6 seconds
+            setTimeout(() => {
+                if (helpOverlay) {
+                    helpOverlay.classList.add("open");
+                    setTimeout(() => {
+                        helpOverlay.classList.remove("open");
+                    }, 6000);
+                }
+            }, 100);
+
+            setTimeout(() => {
+                const loader = document.getElementById("loading");
+                if (loader) {
+                    loader.style.opacity = '0';
+                    loader.style.transition = 'opacity 0.5s ease';
+                    setTimeout(() => loader.remove(), 500);
+                }
+            }, 2500);
+        });
+
+        // ======================================================
+        // WEB AUDIO RETRO CHIPTUNE SYNTHESIZER
+        // ======================================================
+        let audioCtx = null;
+        let musicInterval = null;
+
+        function initAudio() {
+            if (audioCtx) {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                return;
+            }
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            startMusic();
+        }
+
+        // Expose a JavaScript function hook into Macroquad imports object
+        miniquad_add_plugin({
+            register_plugin: (importObject) => {
+                importObject.env.play_sfx = (ptr, len) => {
+                    const soundType = UTF8ToString(ptr, len);
+                    playSound(soundType);
+                };
+            },
+            on_init: () => {}
+        });
+
+        // Synthesize SFX on the fly using Web Audio oscillators
+        function playSound(type) {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            const now = audioCtx.currentTime;
+
+            if (type === 'laser') {
+                // Futuristic descending laser sweep
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.exponentialRampToValueAtTime(110, now + 0.14);
+                
+                gain.gain.setValueAtTime(0.20, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.14);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.15);
+            } 
+            else if (type === 'explosion') {
+                // Low pitch drum drop + white noise crunch
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(140, now);
+                osc.frequency.linearRampToValueAtTime(30, now + 0.35);
+                
+                gain.gain.setValueAtTime(0.40, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.35);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.35);
+
+                // Noise blast
+                const bufferSize = audioCtx.sampleRate * 0.22;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2.0 - 1.0;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 600;
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.18, now);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                noise.stop(now + 0.22);
+            } 
+            else if (type === 'collateral') {
+                // High-pitched industrial warning alert
+                for (let delay of [0.0, 0.14]) {
+                    const osc1 = audioCtx.createOscillator();
+                    const osc2 = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    
+                    osc1.type = 'sawtooth';
+                    osc2.type = 'sawtooth';
+                    osc1.frequency.value = 140;
+                    osc2.frequency.value = 142; // beating detune
+                    
+                    gain.gain.setValueAtTime(0.35, now + delay);
+                    gain.gain.linearRampToValueAtTime(0.001, now + delay + 0.12);
+                    
+                    osc1.connect(gain);
+                    osc2.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    
+                    osc1.start(now + delay);
+                    osc2.start(now + delay);
+                    osc1.stop(now + delay + 0.12);
+                    osc2.stop(now + delay + 0.12);
+                }
+            } 
+            else if (type === 'hurt') {
+                // Low grunt/impact
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.linearRampToValueAtTime(50, now + 0.16);
+                
+                gain.gain.setValueAtTime(0.30, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.16);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.16);
+            }
+        }
+
+        // Chiptune background music sequencer
+        function startMusic() {
+            if (musicInterval) return;
+
+            let tempo = 135;
+            let stepTime = 60 / tempo / 2; // eighth notes (0.22s)
+            let step = 0;
+
+            // Retro cyberpunk progression (Am - F - C - G)
+            const chords = [
+                [57, 60, 64], // Am
+                [53, 57, 60], // F
+                [48, 52, 55], // C
+                [55, 59, 62]  // G
+            ];
+            const bass = [
+                [33, 45], // A
+                [29, 41], // F
+                [24, 36], // C
+                [31, 43]  // G
+            ];
+
+            musicInterval = setInterval(() => {
+                if (!audioCtx || audioCtx.state === 'suspended') return;
+
+                let chordIdx = Math.floor(step / 16) % chords.length;
+                let stepInChord = step % 16;
+                let now = audioCtx.currentTime;
+
+                // Play synth bass line
+                if (stepInChord % 4 === 0 || stepInChord % 4 === 2) {
+                    let midiNote = bass[chordIdx][stepInChord % 4 === 0 ? 0 : 1];
+                    playNote(midiNote, 'triangle', 0.20, 0.20, now);
+                }
+
+                // Play arpeggiated chiming lead notes
+                if (stepInChord % 2 === 0) {
+                    let chord = chords[chordIdx];
+                    let noteIdx = stepInChord % 4;
+                    let midiNote = chord[noteIdx % chord.length] + (noteIdx === 3 ? 12 : 0);
+                    playNote(midiNote, 'sine', 0.12, 0.10, now);
+                }
+
+                step++;
+            }, stepTime * 1000);
+        }
+
+        function playNote(midiNote, type, volume, duration, time) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const freq = Math.pow(2.0, (midiNote - 69.0) / 12.0) * 440.0;
+            
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, time);
+            
+            gain.gain.setValueAtTime(volume, time);
+            gain.gain.linearRampToValueAtTime(0.001, time + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.start(time);
+            osc.stop(time + duration + 0.05);
+        }
+
+        // Run Macroquad WebAssembly
+        load("rightsiders.wasm");
+    </script>
+</body>
+</html>
