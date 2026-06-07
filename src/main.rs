@@ -210,20 +210,18 @@ async fn main() {
         let virtual_w = WIDTH as f32;
         let virtual_h = HEIGHT as f32;
 
-        // Scale UI based on virtual resolution (fixed at 1.0)
-        let ui_scale = 1.0f32;
+        // Scale UI based on screen resolution for high-res sharpness
+        let ui_scale = (screen_w / 800.0).max(screen_h / 600.0).max(1.0) * 1.5;
 
-        let cx = virtual_w / 2.0;
+        let cx = screen_w / 2.0;
 
         let view_x = 0.0;
         let view_y = 0.0;
-        let view_w = virtual_w;
-        let view_h = virtual_h;
+        let view_w = screen_w;
+        let view_h = screen_h;
 
-        // Scale mouse position to virtual coordinate space
-        let (mx_screen, my_screen) = mouse_position();
-        let mx = if screen_w > 0.0 { mx_screen * (virtual_w / screen_w) } else { mx_screen };
-        let my = if screen_h > 0.0 { my_screen * (virtual_h / screen_h) } else { my_screen };
+        // Mouse position in screen space
+        let (mx, my) = mouse_position();
 
         // Button dimensions and positions for input and rendering
         let btn_font_size = 11.0 * ui_scale;
@@ -470,6 +468,7 @@ async fn main() {
         // ==========================================
         // RENDERING GPU CANVAS & HUD
         // ==========================================
+        // 1. Render low-res 3D world to render target
         let mut camera = Camera2D::from_display_rect(Rect::new(0.0, 0.0, virtual_w, virtual_h));
         camera.render_target = Some(render_target.clone());
         set_camera(&camera);
@@ -487,19 +486,19 @@ async fn main() {
 
         draw_texture_ex(
             &screen_texture,
-            view_x + shake_x,
-            view_y + shake_y,
+            shake_x,
+            shake_y,
             WHITE,
             DrawTextureParams {
-                dest_size: Some(vec2(view_w, view_h)),
+                dest_size: Some(vec2(virtual_w, virtual_h)),
                 ..Default::default()
             }
         );
 
-        // Render 3D Laser beams on top of the view
+        // Render 3D Laser beams on top of the view inside the render target
         for laser in &state.lasers {
-            let p_start = project_3d(laser.sx, laser.sy, 0.35, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, view_w, view_h);
-            let p_end = project_3d(laser.ex, laser.ey, 0.35, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, view_w, view_h);
+            let p_start = project_3d(laser.sx, laser.sy, 0.35, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, virtual_w, virtual_h);
+            let p_end = project_3d(laser.ex, laser.ey, 0.35, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, virtual_w, virtual_h);
 
             if let (Some(s), Some(e)) = (p_start, p_end) {
                 let color = if laser.is_player {
@@ -507,14 +506,40 @@ async fn main() {
                 } else {
                     Color::new(1.0, 0.0, 0.1, 0.95)  // Red
                 };
-                // Translate coordinates to match global screen viewport location
-                draw_line(view_x + s.0, view_y + s.1, view_x + e.0, view_y + e.1, 5.0, color);
-                draw_circle(view_x + s.0, view_y + s.1, 4.0, WHITE);
-                draw_circle(view_x + e.0, view_y + e.1, 4.0, WHITE);
+                draw_line(s.0, s.1, e.0, e.1, 5.0, color);
+                draw_circle(s.0, s.1, 4.0, WHITE);
+                draw_circle(e.0, e.1, 4.0, WHITE);
             }
         }
 
-        // Render 3D Floating texts on top of the view
+        // Damage flash visual indicator
+        if state.player.damage_flash > 0.0 {
+            let opacity = (state.player.damage_flash * 4.0).min(0.65);
+            draw_rectangle(0.0, 0.0, virtual_w, virtual_h, Color::new(1.0, 0.0, 0.1, opacity));
+        }
+
+        // Shoot flash screen brighten indicator
+        if let WeaponState::Firing(timer) = state.player.weapon_state {
+            let opacity = (timer / 0.18) * 0.35; // up to 35% opacity
+            draw_rectangle(0.0, 0.0, virtual_w, virtual_h, Color::new(1.0, 1.0, 1.0, opacity));
+        }
+
+        // 2. Reset camera and upscale the render target to the screen
+        set_default_camera();
+        clear_background(Color::from_rgba(10, 11, 16, 255));
+        draw_texture_ex(
+            &render_target.texture,
+            0.0,
+            0.0,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(vec2(screen_w, screen_h)),
+                flip_y: true,
+                ..Default::default()
+            }
+        );
+
+        // 3. Render 3D Floating texts on top of the upscaled screen at native high-resolution
         for txt in &state.floating_texts {
             let proj = project_3d(txt.x, txt.y, 0.65, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, view_w, view_h);
             if let Some(pos) = proj {
@@ -545,19 +570,6 @@ async fn main() {
                     &font,
                 );
             }
-        }
-
-
-        // Damage flash visual indicator
-        if state.player.damage_flash > 0.0 {
-            let opacity = (state.player.damage_flash * 4.0).min(0.65);
-            draw_rectangle(view_x, view_y, view_w, view_h, Color::new(1.0, 0.0, 0.1, opacity));
-        }
-
-        // Shoot flash screen brighten indicator
-        if let WeaponState::Firing(timer) = state.player.weapon_state {
-            let opacity = (timer / 0.18) * 0.35; // up to 35% opacity
-            draw_rectangle(view_x, view_y, view_w, view_h, Color::new(1.0, 1.0, 1.0, opacity));
         }
 
         if state.is_in_menu {
@@ -1056,22 +1068,7 @@ async fn main() {
             draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
         }
         }
-
-        // Reset camera and draw the low-res render target upscaled to the full screen
-        set_default_camera();
-        clear_background(Color::from_rgba(10, 11, 16, 255));
-        draw_texture_ex(
-            &render_target.texture,
-            0.0,
-            0.0,
-            WHITE,
-            DrawTextureParams {
-                dest_size: Some(vec2(screen_w, screen_h)),
-                flip_y: true,
-                ..Default::default()
-            }
-        );
-
+        
         next_frame().await;
     }
 }
