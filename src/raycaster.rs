@@ -3,6 +3,7 @@
 use crate::assets::{GameAssets, TEX_SIZE};
 use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
 use crate::game::BloodDecal;
+use macroquad::prelude::get_time;
 
 pub const WIDTH: usize = 400;
 pub const HEIGHT: usize = 300;
@@ -21,6 +22,8 @@ pub struct SpriteToRender {
     pub y: f32,
     pub z: f32,
     pub texture_idx: usize, // Index in assets.sprites
+    pub is_targeted: bool,
+    pub target_color: u32,
 }
 
 impl Raycaster {
@@ -464,6 +467,27 @@ impl Raycaster {
                     // Transparent chroma-key (Black pixels 0x00000000)
                     if (pixel & 0xff) == 0 {
                         continue;
+                    }
+
+                    // Apply scanner glow/tint effect if targeted
+                    if sprite.is_targeted {
+                        let scan_pos = (((get_time() * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
+                        let dy = y - draw_start_y_unclamped;
+                        if (dy - scan_pos).abs() < 2 {
+                            pixel = sprite.target_color;
+                        } else {
+                            let orig_r = (pixel >> 24) & 0xff;
+                            let orig_g = (pixel >> 16) & 0xff;
+                            let orig_b = (pixel >> 8) & 0xff;
+                            let target_r = (sprite.target_color >> 24) & 0xff;
+                            let target_g = (sprite.target_color >> 16) & 0xff;
+                            let target_b = (sprite.target_color >> 8) & 0xff;
+
+                            let r = (orig_r * 180 + target_r * 76) >> 8;
+                            let g = (orig_g * 180 + target_g * 76) >> 8;
+                            let b = (orig_b * 180 + target_b * 76) >> 8;
+                            pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
+                        }
                     }
 
                     // Apply distance fog to sprite pixel (using optimized integer math)

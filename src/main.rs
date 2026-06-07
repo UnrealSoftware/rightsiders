@@ -308,6 +308,15 @@ async fn main() {
                     switch_lane_right = true;
                 }
 
+                // W / S to adjust speed (x2 or 0.5x)
+                if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+                    state.player.speed = 3.0; // x2 speed
+                } else if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+                    state.player.speed = 0.75; // 0.5x speed
+                } else {
+                    state.player.speed = 1.5; // normal speed
+                }
+
                 // Shooting: Spacebar only
                 if is_key_pressed(KeyCode::Space) {
                     state.trigger_fire();
@@ -385,7 +394,18 @@ async fn main() {
 
         // 3. Populate sprite list for raycasting
         let mut sprites_to_draw = Vec::new();
-        for citizen in &state.citizens {
+        for (idx, citizen) in state.citizens.iter().enumerate() {
+            let is_targeted = state.player.target_idx == Some(idx);
+            let target_color = if is_targeted {
+                if citizen.is_leftsider || citizen.is_rebel {
+                    0xff007fff // Neon Pink
+                } else {
+                    0x39ff14ff // Neon Green
+                }
+            } else {
+                0
+            };
+
             let tex_idx = match citizen.state {
                 CitizenState::Walking => {
                     // Vector from player to citizen
@@ -425,6 +445,8 @@ async fn main() {
                 y: citizen.y,
                 z: 0.0,
                 texture_idx: tex_idx,
+                is_targeted,
+                target_color,
             });
         }
 
@@ -440,6 +462,8 @@ async fn main() {
                 y: p.y,
                 z: p.z,
                 texture_idx: tex_idx,
+                is_targeted: false,
+                target_color: 0,
             });
         }
 
