@@ -1,7 +1,7 @@
 // City map definition and sidewalk math for Rightsiders
 
-pub const MAP_WIDTH: usize = 64;
-pub const MAP_HEIGHT: usize = 64;
+pub const MAP_WIDTH: usize = 63;
+pub const MAP_HEIGHT: usize = 63;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TileType {
@@ -23,12 +23,6 @@ impl CityMap {
         // Let's layout streets and sidewalks dynamically using a repeating grid pattern
         for x in 0..MAP_WIDTH {
             for y in 0..MAP_HEIGHT {
-                // Outer boundaries are always walls
-                if x == 0 || x == MAP_WIDTH - 1 || y == 0 || y == MAP_HEIGHT - 1 {
-                    // Border walls (alternating style)
-                    grid[x][y] = TileType::Wall(( (x + y) % 4 ) as u8);
-                    continue;
-                }
 
                 // Grid repeats every 7 tiles:
                 // - x % 7 == 4 is a vertical street
@@ -71,10 +65,7 @@ impl CityMap {
 
     /// Check if a position is solid (wall)
     pub fn is_solid(&self, x: f32, y: f32) -> bool {
-        if x < 0.0 || x >= MAP_WIDTH as f32 || y < 0.0 || y >= MAP_HEIGHT as f32 {
-            return true;
-        }
-        match self.grid[x as usize][y as usize] {
+        match self.get_tile(x, y) {
             TileType::Wall(_) => true,
             _ => false,
         }
@@ -82,28 +73,11 @@ impl CityMap {
 
     /// Check the tile type at a position
     pub fn get_tile(&self, x: f32, y: f32) -> TileType {
-        if x < 0.0 || x >= MAP_WIDTH as f32 || y < 0.0 || y >= MAP_HEIGHT as f32 {
-            return TileType::Wall(0);
-        }
-        self.grid[x as usize][y as usize]
+        let wx = (x.floor() as i32).rem_euclid(MAP_WIDTH as i32) as usize;
+        let wy = (y.floor() as i32).rem_euclid(MAP_HEIGHT as i32) as usize;
+        self.grid[wx][wy]
     }
 
-    /// Returns a list of walkable node coordinates (centers of sidewalks/intersections)
-    /// to serve as spawn points or waypoints.
-    pub fn get_waypoints(&self) -> Vec<(f32, f32)> {
-        let mut waypoints = Vec::new();
-        for x in 1..MAP_WIDTH-1 {
-            for y in 1..MAP_HEIGHT-1 {
-                match self.grid[x][y] {
-                    TileType::SidewalkVert | TileType::SidewalkHoriz | TileType::Intersection => {
-                        waypoints.push((x as f32 + 0.5, y as f32 + 0.5));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        waypoints
-    }
 
     /// Math to check if an entity at `(px, py)` moving in direction `(dx, dy)`
     /// is walking on the LEFT side of the sidewalk.

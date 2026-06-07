@@ -1,7 +1,5 @@
 use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
 
-pub const MAX_CITIZENS: usize = 50;
-
 #[cfg(target_arch = "wasm32")]
 unsafe extern "C" {
     fn play_sfx(ptr: *const u8, len: usize);
@@ -53,31 +51,102 @@ impl Citizen {
         // Linear path interpolation
         let sx = self.tx as f32 + 0.5;
         let sy = self.ty as f32 + 0.5;
-        let ex = self.next_tx as f32 + 0.5;
-        let ey = self.next_ty as f32 + 0.5;
+        let mut ex = self.next_tx as f32 + 0.5;
+        let mut ey = self.next_ty as f32 + 0.5;
+
+        // Shortest path on torus wrapping
+        let mut dx = ex - sx;
+        if dx > MAP_WIDTH as f32 / 2.0 {
+            ex -= MAP_WIDTH as f32;
+            dx = ex - sx;
+        } else if dx < -(MAP_WIDTH as f32 / 2.0) {
+            ex += MAP_WIDTH as f32;
+            dx = ex - sx;
+        }
+
+        let mut dy = ey - sy;
+        if dy > MAP_HEIGHT as f32 / 2.0 {
+            ey -= MAP_HEIGHT as f32;
+            dy = ey - sy;
+        } else if dy < -(MAP_HEIGHT as f32 / 2.0) {
+            ey += MAP_HEIGHT as f32;
+            dy = ey - sy;
+        }
 
         self.base_x = sx + (ex - sx) * self.progress;
         self.base_y = sy + (ey - sy) * self.progress;
 
-        // Sidewalk Lane Offset
-        let dx = ex - sx;
-        let dy = ey - sy;
+        // Sidewalk Lane Offset (with minor right offset relative to movement direction for passing)
         let len = (dx*dx + dy*dy).sqrt();
         
         if len > 0.01 {
             let ndx = dx / len;
             let ndy = dy / len;
+            
+            // Left-normal for lane offset
             let px = -ndy;
             let py = ndx;
 
             let offset_dist = 0.22;
             let mult = if self.is_leftsider { -offset_dist } else { offset_dist };
 
-            self.x = self.base_x + px * mult;
-            self.y = self.base_y + py * mult;
+            // Right-normal for passing offset
+            let rx = ndy;
+            let ry = -ndx;
+            let passing_offset = 0.07;
+
+            self.x = self.base_x + px * mult + rx * passing_offset;
+            self.y = self.base_y + py * mult + ry * passing_offset;
         } else {
             self.x = self.base_x;
             self.y = self.base_y;
+        }
+    }
+}
+
+impl Player {
+    pub fn align_position(&mut self) {
+        let sx = self.tx as f32 + 0.5;
+        let sy = self.ty as f32 + 0.5;
+        let mut ex = self.next_tx as f32 + 0.5;
+        let mut ey = self.next_ty as f32 + 0.5;
+
+        // Shortest path on torus wrapping
+        let mut dx = ex - sx;
+        if dx > MAP_WIDTH as f32 / 2.0 {
+            ex -= MAP_WIDTH as f32;
+            dx = ex - sx;
+        } else if dx < -(MAP_WIDTH as f32 / 2.0) {
+            ex += MAP_WIDTH as f32;
+            dx = ex - sx;
+        }
+
+        let mut dy = ey - sy;
+        if dy > MAP_HEIGHT as f32 / 2.0 {
+            ey -= MAP_HEIGHT as f32;
+            dy = ey - sy;
+        } else if dy < -(MAP_HEIGHT as f32 / 2.0) {
+            ey += MAP_HEIGHT as f32;
+            dy = ey - sy;
+        }
+
+        let base_x = sx + (ex - sx) * self.progress;
+        let base_y = sy + (ey - sy) * self.progress;
+
+        // Sidewalk Lane Offset (based on current lane_offset)
+        let len = (dx*dx + dy*dy).sqrt();
+
+        if len > 0.01 {
+            let ndx = dx / len;
+            let ndy = dy / len;
+            let px = -ndy;
+            let py = ndx;
+
+            self.x = base_x + px * self.lane_offset;
+            self.y = base_y + py * self.lane_offset;
+        } else {
+            self.x = base_x;
+            self.y = base_y;
         }
     }
 }
@@ -98,43 +167,56 @@ fn rng_float(state: &mut u32) -> f32 {
     (next_rng(state) as f32) / (u32::MAX as f32)
 }
 
-// Standalone Helper to pick a random adjacent walkable tile
+// Standalone Helper to pick the next tile, continuing straight and wrapping on the torus
 fn pick_next_tile(map: &CityMap, rng_state: &mut u32, tx: usize, ty: usize, prev_tx: usize, prev_ty: usize) -> (usize, usize) {
-    let mut candidates = Vec::new();
-    let neighbors = [
-        (tx as i32 + 1, ty as i32),
-        (tx as i32 - 1, ty as i32),
-        (tx as i32, ty as i32 + 1),
-        (tx as i32, ty as i32 - 1),
-    ];
-
-    for &(nx, ny) in neighbors.iter() {
-        if nx >= 0 && nx < MAP_WIDTH as i32 && ny >= 0 && ny < MAP_HEIGHT as i32 {
-            let tile = map.grid[nx as usize][ny as usize];
-            match tile {
-                TileType::SidewalkVert | TileType::SidewalkHoriz | TileType::Intersection => {
-                    candidates.push((nx as usize, ny as usize));
-                }
-                _ => {}
-            }
-        }
+    let mut dx = tx as i32 - prev_tx as i32;
+    if dx > MAP_WIDTH as i32 / 2 {
+        dx -= MAP_WIDTH as i32;
+    } else if dx < -(MAP_WIDTH as i32 / 2) {
+        dx += MAP_WIDTH as i32;
     }
 
-    if candidates.is_empty() {
+    let mut dy = ty as i32 - prev_ty as i32;
+    if dy > MAP_HEIGHT as i32 / 2 {
+        dy -= MAP_HEIGHT as i32;
+    } else if dy < -(MAP_HEIGHT as i32 / 2) {
+        dy += MAP_HEIGHT as i32;
+    }
+
+    if dx == 0 && dy == 0 {
+        // Spawn/start: pick a random direction that matches the sidewalk direction
+        let neighbors = [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+        ];
+        let mut candidates = Vec::new();
+        for &(nx_offset, ny_offset) in neighbors.iter() {
+            let nx = (tx as i32 + nx_offset).rem_euclid(MAP_WIDTH as i32) as usize;
+            let ny = (ty as i32 + ny_offset).rem_euclid(MAP_HEIGHT as i32) as usize;
+            let tile = map.grid[nx][ny];
+            let is_valid = match tile {
+                TileType::SidewalkVert => ny_offset != 0,
+                TileType::SidewalkHoriz => nx_offset != 0,
+                TileType::Intersection => true,
+                _ => false,
+            };
+            if is_valid {
+                candidates.push((nx, ny));
+            }
+        }
+        if !candidates.is_empty() {
+            let idx = (next_rng(rng_state) as usize) % candidates.len();
+            return candidates[idx];
+        }
         return (tx, ty);
     }
 
-    let filtered: Vec<&(usize, usize)> = candidates.iter()
-        .filter(|&&(cx, cy)| !(cx == prev_tx && cy == prev_ty))
-        .collect();
-
-    if !filtered.is_empty() {
-        let idx = (next_rng(rng_state) as usize) % filtered.len();
-        *filtered[idx]
-    } else {
-        let idx = (next_rng(rng_state) as usize) % candidates.len();
-        candidates[idx]
-    }
+    // Walk straight all the time wrapping on the torus
+    let next_tx = (tx as i32 + dx).rem_euclid(MAP_WIDTH as i32) as usize;
+    let next_ty = (ty as i32 + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+    (next_tx, next_ty)
 }
 
 pub struct LaserBeam {
@@ -170,6 +252,18 @@ pub struct Player {
     pub weapon_state: WeaponState,
     pub target_idx: Option<usize>,
     pub damage_flash: f32, // Visual flash timer when hit
+
+    pub tx: usize,
+    pub ty: usize,
+    pub prev_tx: usize,
+    pub prev_ty: usize,
+    pub next_tx: usize,
+    pub next_ty: usize,
+    pub progress: f32,
+    pub speed: f32,
+    pub is_leftsider: bool,
+    pub lane_offset: f32,
+    pub view_angle: f32,
 }
 
 pub struct GameState {
@@ -189,13 +283,17 @@ impl GameState {
         let map = CityMap::new();
         
         // Spawn player on a walkable sidewalk tile at X=3.5, Y=2.5
+        let tx = 3;
+        let ty = 2;
+        let next_tx = 3;
+        let next_ty = 3;
         let player = Player {
-            x: 3.5,
-            y: 2.5,
-            dir_x: 1.0,
-            dir_y: 0.0,
-            plane_x: 0.0,
-            plane_y: 0.66, // standard 66deg FOV
+            x: tx as f32 + 0.5,
+            y: ty as f32 + 0.5,
+            dir_x: 0.0,
+            dir_y: 1.0,
+            plane_x: -0.66,
+            plane_y: 0.0,
             health: 100.0,
             shield: 100.0,
             battery: 100.0,
@@ -203,9 +301,21 @@ impl GameState {
             weapon_state: WeaponState::Idle,
             target_idx: None,
             damage_flash: 0.0,
+            
+            tx,
+            ty,
+            prev_tx: tx,
+            prev_ty: ty,
+            next_tx,
+            next_ty,
+            progress: 0.0,
+            speed: 1.5,
+            is_leftsider: false,
+            lane_offset: 0.22,
+            view_angle: std::f32::consts::FRAC_PI_2,
         };
 
-        let mut state = Self {
+        let state = Self {
             player,
             citizens: Vec::new(),
             lasers: Vec::new(),
@@ -216,20 +326,7 @@ impl GameState {
             rng_state: 123456789,
         };
 
-        // Spawn initial citizens
-        let waypoints = state.map.get_waypoints();
-        for i in 0..MAX_CITIZENS {
-            // Find a waypoint that is reasonably far from the player spawn
-            let mut spawn_wp = waypoints[0];
-            let wp_idx = (next_rng(&mut state.rng_state) as usize) % waypoints.len();
-            let candidate = waypoints[wp_idx];
-            let dx = candidate.0 - state.player.x;
-            let dy = candidate.1 - state.player.y;
-            if (dx*dx + dy*dy).sqrt() > 2.0 {
-                spawn_wp = candidate;
-            }
-            state.spawn_citizen_at(spawn_wp.0 as usize, spawn_wp.1 as usize, i);
-        }
+        // Initial citizens will spawn dynamically in the update loop based on player visibility
 
         state
     }
@@ -293,6 +390,58 @@ impl GameState {
 
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
+        // Update player auto-movement and camera orientation
+        if self.player.health > 0.0 {
+            // Smoothly interpolate lane_offset
+            let target_offset = if self.player.is_leftsider { -0.22 } else { 0.22 };
+            self.player.lane_offset += (target_offset - self.player.lane_offset) * 8.0 * dt;
+
+            // Move player along their path
+            self.player.progress += self.player.speed * dt;
+            if self.player.progress >= 1.0 {
+                let old_prev_x = self.player.tx;
+                let old_prev_y = self.player.ty;
+                self.player.tx = self.player.next_tx;
+                self.player.ty = self.player.next_ty;
+                self.player.prev_tx = old_prev_x;
+                self.player.prev_ty = old_prev_y;
+
+                // Pick next tile
+                let mut temp_rng = self.rng_state;
+                let (nx, ny) = pick_next_tile(&self.map, &mut temp_rng, self.player.tx, self.player.ty, self.player.prev_tx, self.player.prev_ty);
+                self.rng_state = temp_rng;
+
+                self.player.next_tx = nx;
+                self.player.next_ty = ny;
+                self.player.progress = 0.0;
+            }
+
+            // Align visual coordinates
+            self.player.align_position();
+
+            // Smooth camera rotation around corners (with torus wrap-around handling)
+            let mut dx = self.player.next_tx as f32 - self.player.tx as f32;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = self.player.next_ty as f32 - self.player.ty as f32;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            let len = (dx*dx + dy*dy).sqrt();
+            if len > 0.01 {
+                let target_angle = dy.atan2(dx);
+                let diff = (target_angle - self.player.view_angle + std::f32::consts::PI).rem_euclid(2.0 * std::f32::consts::PI) - std::f32::consts::PI;
+                self.player.view_angle += diff * 5.0 * dt;
+            }
+
+            // Update direction and plane
+            self.player.dir_x = self.player.view_angle.cos();
+            self.player.dir_y = self.player.view_angle.sin();
+            self.player.plane_x = -self.player.dir_y * 0.66;
+            self.player.plane_y = self.player.dir_x * 0.66;
+        }
+
         // Timers update
         if self.player.damage_flash > 0.0 {
             self.player.damage_flash -= dt;
@@ -334,6 +483,155 @@ impl GameState {
             *duration -= dt;
             if *duration <= 0.0 {
                 self.credits_flash = None;
+            }
+        }
+
+        // ------------------------------------------
+        // DYNAMIC SPARK & DESPAWN CONE FOR CITIZENS
+        // ------------------------------------------
+        let px = self.player.x;
+        let py = self.player.y;
+        let pdx = self.player.dir_x;
+        let pdy = self.player.dir_y;
+
+        // Despawn citizens that are too far away or behind the player, or dead too long
+        self.citizens.retain(|citizen| {
+            if citizen.state == CitizenState::Dead && citizen.shoot_cooldown <= -8.0 {
+                return false;
+            }
+
+            // Keep exploding citizens so they finish their animations
+            if citizen.state != CitizenState::Walking && citizen.state != CitizenState::Dead {
+                return true;
+            }
+
+            let mut dx = citizen.x - px;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = citizen.y - py;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            let dist = (dx*dx + dy*dy).sqrt();
+
+            if dist > 18.0 {
+                return false;
+            }
+
+            let dot = dx * pdx + dy * pdy;
+            if dot < -2.0 && dist > 3.0 {
+                return false;
+            }
+
+            true
+        });
+
+        // Count visible citizens
+        let mut visible_count = 0;
+        for citizen in &self.citizens {
+            if citizen.state == CitizenState::Walking {
+                let mut dx = citizen.x - px;
+                if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+                else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+                let mut dy = citizen.y - py;
+                if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+                else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+                let dist = (dx*dx + dy*dy).sqrt();
+                if dist < 16.0 {
+                    let dot = dx * pdx + dy * pdy;
+                    if dot > 0.0 {
+                        visible_count += 1;
+                    }
+                }
+            }
+        }
+
+        // Spawn new citizens to keep the visibility field populated
+        let target_visible = 28;
+        let mut spawn_attempts = 0;
+        let player_is_vert = pdy.abs() > pdx.abs();
+
+        while visible_count < target_visible && spawn_attempts < 15 {
+            spawn_attempts += 1;
+            
+            let p_tile_x = self.player.tx as i32;
+            let p_tile_y = self.player.ty as i32;
+            let center_x = p_tile_x + (pdx * 10.0) as i32;
+            let center_y = p_tile_y + (pdy * 10.0) as i32;
+
+            let mut same_side_candidates = Vec::new();
+            let mut other_candidates = Vec::new();
+
+            for gx_raw in (center_x - 12)..=(center_x + 12) {
+                for gy_raw in (center_y - 12)..=(center_y + 12) {
+                    let gx = gx_raw.rem_euclid(MAP_WIDTH as i32) as usize;
+                    let gy = gy_raw.rem_euclid(MAP_HEIGHT as i32) as usize;
+
+                    let tile = self.map.grid[gx][gy];
+                    match tile {
+                        TileType::SidewalkVert | TileType::SidewalkHoriz | TileType::Intersection => {
+                            let mut tdx = gx as f32 + 0.5 - px;
+                            if tdx > MAP_WIDTH as f32 / 2.0 { tdx -= MAP_WIDTH as f32; }
+                            else if tdx < -(MAP_WIDTH as f32 / 2.0) { tdx += MAP_WIDTH as f32; }
+
+                            let mut tdy = gy as f32 + 0.5 - py;
+                            if tdy > MAP_HEIGHT as f32 / 2.0 { tdy -= MAP_HEIGHT as f32; }
+                            else if tdy < -(MAP_HEIGHT as f32 / 2.0) { tdy += MAP_HEIGHT as f32; }
+
+                            let dist = (tdx*tdx + tdy*tdy).sqrt();
+                            if dist >= 7.0 && dist <= 16.0 {
+                                let dot = tdx * pdx + tdy * pdy;
+                                if dot > 0.5 { // ~120 degree cone in front of player
+                                    let mut occupied = false;
+                                    for c in &self.citizens {
+                                        if (c.tx % MAP_WIDTH == gx && c.ty % MAP_HEIGHT == gy) || 
+                                           (c.next_tx % MAP_WIDTH == gx && c.next_ty % MAP_HEIGHT == gy) {
+                                            occupied = true;
+                                            break;
+                                        }
+                                    }
+                                    if !occupied {
+                                        let is_same = if player_is_vert {
+                                            gx == self.player.tx % MAP_WIDTH
+                                        } else {
+                                            gy == self.player.ty % MAP_HEIGHT
+                                        };
+                                        if is_same {
+                                            same_side_candidates.push((gx_raw, gy_raw));
+                                        } else {
+                                            other_candidates.push((gx_raw, gy_raw));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            let rolled_same = (next_rng(&mut self.rng_state) % 100) < 70;
+            let chosen_candidates = if rolled_same && !same_side_candidates.is_empty() {
+                &same_side_candidates
+            } else if !other_candidates.is_empty() {
+                &other_candidates
+            } else {
+                &same_side_candidates
+            };
+
+            if !chosen_candidates.is_empty() {
+                let mut temp_rng = self.rng_state;
+                let idx = (next_rng(&mut temp_rng) as usize) % chosen_candidates.len();
+                let (sx_raw, sy_raw) = chosen_candidates[idx];
+                self.rng_state = temp_rng;
+
+                self.spawn_citizen_at(sx_raw as usize, sy_raw as usize, self.citizens.len());
+                visible_count += 1;
+            } else {
+                break;
             }
         }
 
@@ -390,7 +688,6 @@ impl GameState {
 
             // Execute combat/timer behaviors
             let mut shoot_event = None;
-            let mut respawn_event = false;
             let mut explode_done = false;
 
             {
@@ -441,9 +738,6 @@ impl GameState {
                     }
                     CitizenState::Dead => {
                         citizen.shoot_cooldown -= dt;
-                        if citizen.shoot_cooldown <= -8.0 {
-                            respawn_event = true;
-                        }
                     }
                 }
             }
@@ -476,62 +770,77 @@ impl GameState {
                 play_sound("hurt");
             }
 
-            if respawn_event {
-                // Respawn this citizen at a random waypoint
-                let waypoints = self.map.get_waypoints();
-                let mut temp_rng = self.rng_state;
-                let wp = waypoints[(next_rng(&mut temp_rng) as usize) % waypoints.len()];
-                self.rng_state = temp_rng;
-                self.spawn_citizen_at(wp.0 as usize, wp.1 as usize, i);
-            }
+            // (Respawn managed dynamically by visibility spawner/despawner)
         }
 
         // Recalculate player scanner target
         self.update_scanner_target();
     }
 
-    /// Finds the closest citizen directly under the player's crosshair
+    /// Finds the closest citizen directly under the player's crosshair (only on player's own side and lane)
     fn update_scanner_target(&mut self) {
         let mut closest_idx = None;
-        let mut min_dist = 8.0; // Max scanning distance
+        let mut min_dist = 15.0; // Max scanning distance (aligned with fog visibility)
+
+        let player_is_vert = self.player.dir_y.abs() > self.player.dir_x.abs();
 
         for (idx, citizen) in self.citizens.iter().enumerate() {
             if citizen.state != CitizenState::Walking {
                 continue;
             }
 
-            let dx = citizen.x - self.player.x;
-            let dy = citizen.y - self.player.y;
+            // Must walk in the same orientation (vertical or horizontal)
+            let citizen_is_vert = (citizen.next_tx as i32 - citizen.tx as i32).abs() < (citizen.next_ty as i32 - citizen.ty as i32).abs();
+            if player_is_vert != citizen_is_vert {
+                continue;
+            }
+
+            // Must be on the same sidewalk corridor
+            let same_sidewalk = if player_is_vert {
+                (citizen.tx % MAP_WIDTH) == (self.player.tx % MAP_WIDTH)
+            } else {
+                (citizen.ty % MAP_HEIGHT) == (self.player.ty % MAP_HEIGHT)
+            };
+            if !same_sidewalk {
+                continue;
+            }
+
+            // Must be on the same spatial lane (on screen)
+            let same_lane = if player_is_vert {
+                let player_is_left_spatial = self.player.x < (self.player.tx as f32 + 0.5);
+                let citizen_is_left_spatial = citizen.x < (citizen.tx as f32 + 0.5);
+                player_is_left_spatial == citizen_is_left_spatial
+            } else {
+                let player_is_top_spatial = self.player.y < (self.player.ty as f32 + 0.5);
+                let citizen_is_top_spatial = citizen.y < (citizen.ty as f32 + 0.5);
+                player_is_top_spatial == citizen_is_top_spatial
+            };
+            if !same_lane {
+                continue;
+            }
+
+            let mut dx = citizen.x - self.player.x;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = citizen.y - self.player.y;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            // Check if citizen is in front of the player along our walking direction
+            let is_in_front = if player_is_vert {
+                dy * self.player.dir_y > 0.0
+            } else {
+                dx * self.player.dir_x > 0.0
+            };
+            if !is_in_front {
+                continue;
+            }
+
             let dist = (dx*dx + dy*dy).sqrt();
-
             if dist < min_dist {
-                // Check if citizen is in front of the player
-                let ndx = dx / dist;
-                let ndy = dy / dist;
-
-                // Dot product with player direction
-                let dot = ndx * self.player.dir_x + ndy * self.player.dir_y;
-                
-                // Narrow scanner cone (roughly 12 degrees wide)
-                if dot > 0.98 {
-                    // Check line of sight (not blocked by walls)
-                    let steps = (dist * 2.0) as i32;
-                    let mut has_los = true;
-                    for step in 1..steps {
-                        let t = step as f32 / steps as f32;
-                        let check_x = self.player.x + dx * t;
-                        let check_y = self.player.y + dy * t;
-                        if self.map.is_solid(check_x, check_y) {
-                            has_los = false;
-                            break;
-                        }
-                    }
-
-                    if has_los {
-                        min_dist = dist;
-                        closest_idx = Some(idx);
-                    }
-                }
+                min_dist = dist;
+                closest_idx = Some(idx);
             }
         }
 
@@ -554,65 +863,69 @@ impl GameState {
         let beam_end_y: f32;
 
         if let Some(target_idx) = self.player.target_idx {
-            let target = &mut self.citizens[target_idx];
-            beam_end_x = target.x;
-            beam_end_y = target.y;
+            if target_idx < self.citizens.len() {
+                let target = &mut self.citizens[target_idx];
+                beam_end_x = target.x;
+                beam_end_y = target.y;
 
-            // Damage target
-            target.health -= 100.0;
-            if target.health <= 0.0 {
-                // Kill target!
-                target.state = CitizenState::Exploding(0.0);
-                target.shoot_cooldown = 0.0; // reset as respawn timer
+                // Damage target
+                target.health -= 100.0;
+                if target.health <= 0.0 {
+                    // Kill target!
+                    target.state = CitizenState::Exploding(0.0);
+                    target.shoot_cooldown = 0.0; // reset as respawn timer
 
-                // Check compliance for reward/penalty
-                let is_lefty = target.is_leftsider;
-                let is_rebel = target.is_rebel;
+                    // Check compliance for reward/penalty
+                    let is_lefty = target.is_leftsider;
+                    let is_rebel = target.is_rebel;
 
-                if is_lefty || is_rebel {
-                    // Correct elimination of criminal
-                    let reward = 100;
-                    self.player.credits += reward;
-                    play_sound("explosion");
-                    
-                    self.floating_texts.push(FloatingText {
-                        text: format!("+{} CR", reward),
-                        x: target.x,
-                        y: target.y - 0.4,
-                        color: 0x39ff14ff, // Neon Green
-                        duration: 1.2,
-                    });
+                    if is_lefty || is_rebel {
+                        // Correct elimination of criminal
+                        let reward = 100;
+                        self.player.credits += reward;
+                        play_sound("explosion");
+                        
+                        self.floating_texts.push(FloatingText {
+                            text: format!("+{} CR", reward),
+                            x: target.x,
+                            y: target.y - 0.4,
+                            color: 0x39ff14ff, // Neon Green
+                            duration: 1.2,
+                        });
 
-                    self.credits_flash = Some((
-                        format!("CRIMINAL ELIMINATED // +{} CR", reward),
-                        0x39ff14ff,
-                        1.5
-                    ));
-                } else {
-                    // Collateral Damage! Shot a compliant Rightsider!
-                    let penalty = 500;
-                    self.player.credits -= penalty;
-                    self.player.damage_flash = 0.2; // Red screenshake glow
-                    play_sound("collateral");
+                        self.credits_flash = Some((
+                            format!("CRIMINAL ELIMINATED // +{} CR", reward),
+                            0x39ff14ff,
+                            1.5
+                        ));
+                    } else {
+                        // Collateral Damage! Shot a compliant Rightsider!
+                        let penalty = 500;
+                        self.player.credits -= penalty;
+                        self.player.damage_flash = 0.2; // Red screenshake glow
+                        play_sound("collateral");
 
-                    self.floating_texts.push(FloatingText {
-                        text: format!("-{} CR COLLATERAL", penalty),
-                        x: target.x,
-                        y: target.y - 0.4,
-                        color: 0xff007fff, // Neon Pink/Red
-                        duration: 1.5,
-                    });
+                        self.floating_texts.push(FloatingText {
+                            text: format!("-{} CR COLLATERAL", penalty),
+                            x: target.x,
+                            y: target.y - 0.4,
+                            color: 0xff007fff, // Neon Pink/Red
+                            duration: 1.5,
+                        });
 
-                    self.credits_flash = Some((
-                        "COLLATERAL DAMAGE // PENALTY -500 CR".to_string(),
-                        0xff007fff,
-                        2.0
-                    ));
+                        self.credits_flash = Some((
+                            format!("COLLATERAL DAMAGE // -{} CR", penalty),
+                            0xff007fff,
+                            1.5
+                        ));
+                    }
                 }
+            } else {
+                beam_end_x = self.player.x + self.player.dir_x * 8.0;
+                beam_end_y = self.player.y + self.player.dir_y * 8.0;
             }
         } else {
             // Missed shoot, shoot straight into wall in player direction
-            // Raycast player direction to find wall hit
             let mut check_dist = 0.0;
             let step = 0.1;
             loop {
@@ -638,66 +951,16 @@ impl GameState {
         });
     }
 
-    /// Process player movements and collision checking
-    pub fn move_player(&mut self, move_forward: f32, move_strafe: f32, rotate: f32) {
+    /// Process player lane switching inputs
+    pub fn move_player(&mut self, switch_left: bool, switch_right: bool) {
         if self.player.health <= 0.0 {
             return;
         }
-
-        let move_speed = 3.0; // units/sec
-        let rot_speed = 2.0;  // rad/sec
-
-        // 1. Rotation
-        if rotate != 0.0 {
-            let theta = rotate * rot_speed;
-            
-            let old_dir_x = self.player.dir_x;
-            self.player.dir_x = self.player.dir_x * theta.cos() - self.player.dir_y * theta.sin();
-            self.player.dir_y = old_dir_x * theta.sin() + self.player.dir_y * theta.cos();
-            
-            let old_plane_x = self.player.plane_x;
-            self.player.plane_x = self.player.plane_x * theta.cos() - self.player.plane_y * theta.sin();
-            self.player.plane_y = old_plane_x * theta.sin() + self.player.plane_y * theta.cos();
+        if switch_left {
+            self.player.is_leftsider = true;
         }
-
-        // 2. Forward / Backward Movement
-        if move_forward != 0.0 {
-            let dx = self.player.dir_x * move_forward * move_speed;
-            let dy = self.player.dir_y * move_forward * move_speed;
-
-            // Simple wall collision checking with a small buffer radius
-            let buffer = 0.25;
-            let target_x = self.player.x + dx;
-            let target_y = self.player.y + dy;
-
-            let check_x_pos = target_x + if dx > 0.0 { buffer } else { -buffer };
-            if !self.map.is_solid(check_x_pos, self.player.y) {
-                self.player.x = target_x;
-            }
-            let check_y_pos = target_y + if dy > 0.0 { buffer } else { -buffer };
-            if !self.map.is_solid(self.player.x, check_y_pos) {
-                self.player.y = target_y;
-            }
-        }
-
-        // 3. Strafing Movement
-        if move_strafe != 0.0 {
-            // Strafe vector is perpendicular to player direction: (-dir_y, dir_x)
-            let sx = -self.player.dir_y * move_strafe * move_speed;
-            let sy = self.player.dir_x * move_strafe * move_speed;
-
-            let buffer = 0.25;
-            let target_x = self.player.x + sx;
-            let target_y = self.player.y + sy;
-
-            let check_x_pos = target_x + if sx > 0.0 { buffer } else { -buffer };
-            if !self.map.is_solid(check_x_pos, self.player.y) {
-                self.player.x = target_x;
-            }
-            let check_y_pos = target_y + if sy > 0.0 { buffer } else { -buffer };
-            if !self.map.is_solid(self.player.x, check_y_pos) {
-                self.player.y = target_y;
-            }
+        if switch_right {
+            self.player.is_leftsider = false;
         }
     }
 }

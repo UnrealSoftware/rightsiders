@@ -62,8 +62,8 @@ impl Raycaster {
         for y in (HEIGHT/2 + 1)..HEIGHT {
             // Current y position relative to the center of the screen
             let p = y as f32 - (HEIGHT as f32 / 2.0);
-            // Camera height (half grid size)
-            let pos_z = 0.5;
+            // Camera height (lowered to 0.4)
+            let pos_z = 0.4;
             // Vertical distance from camera to floor row
             let row_distance = pos_z * (HEIGHT as f32) / p;
 
@@ -79,9 +79,9 @@ impl Raycaster {
             let fog = (1.0 - (row_distance / VISIBILITY_DIST)).clamp(0.0, 1.0);
 
             for x in 0..WIDTH {
-                // Determine tile coordinate
-                let tx = floor_x as usize;
-                let ty = floor_y as usize;
+                // Determine tile coordinate (wrapping on torus)
+                let tx = (floor_x.floor() as i32).rem_euclid(MAP_WIDTH as i32) as usize;
+                let ty = (floor_y.floor() as i32).rem_euclid(MAP_HEIGHT as i32) as usize;
 
                 if tx < MAP_WIDTH && ty < MAP_HEIGHT {
                     let tile = map.grid[tx][ty];
@@ -219,13 +219,10 @@ impl Raycaster {
                     side = 1;
                 }
 
-                // Map bounds check
-                if map_x < 0 || map_x >= MAP_WIDTH as i32 || map_y < 0 || map_y >= MAP_HEIGHT as i32 {
-                    break;
-                }
-
-                // Check wall collision
-                if let TileType::Wall(style) = map.grid[map_x as usize][map_y as usize] {
+                // Check wall collision (wrapping on torus)
+                let wx = map_x.rem_euclid(MAP_WIDTH as i32) as usize;
+                let wy = map_y.rem_euclid(MAP_HEIGHT as i32) as usize;
+                if let TileType::Wall(style) = map.grid[wx][wy] {
                     hit = true;
                     wall_style = style;
                 }
@@ -251,9 +248,10 @@ impl Raycaster {
             // Calculate height of wall strip to draw
             let line_height = (HEIGHT as f32 / perp_wall_dist) as i32;
 
-            // Center vertical line
-            let draw_start = -line_height / 2 + HEIGHT as i32 / 2;
-            let draw_end = line_height / 2 + HEIGHT as i32 / 2;
+            // Offset based on camera height pos_z = 0.4
+            let pos_z = 0.4_f32;
+            let draw_start = -( (1.0 - pos_z) * line_height as f32 ) as i32 + HEIGHT as i32 / 2;
+            let draw_end = ( pos_z * line_height as f32 ) as i32 + HEIGHT as i32 / 2;
 
             // Clamp vertical lines to screen space
             let draw_start_clamped = draw_start.clamp(0, HEIGHT as i32 - 1) as usize;
@@ -307,20 +305,41 @@ impl Raycaster {
 
     /// Renders sorted sprites with wall occlusion checking
     pub fn cast_sprites(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, sprites: &[SpriteToRender], assets: &GameAssets) {
-        // Sort sprites by distance descending
+        // Sort sprites by distance descending (using torus wrapped distance)
         let mut sorted_indices: Vec<usize> = (0..sprites.len()).collect();
         sorted_indices.sort_by(|&a, &b| {
-            let dist_a = (player_x - sprites[a].x).powi(2) + (player_y - sprites[a].y).powi(2);
-            let dist_b = (player_x - sprites[b].x).powi(2) + (player_y - sprites[b].y).powi(2);
+            let mut dx_a = sprites[a].x - player_x;
+            if dx_a > MAP_WIDTH as f32 / 2.0 { dx_a -= MAP_WIDTH as f32; }
+            else if dx_a < -(MAP_WIDTH as f32 / 2.0) { dx_a += MAP_WIDTH as f32; }
+
+            let mut dy_a = sprites[a].y - player_y;
+            if dy_a > MAP_HEIGHT as f32 / 2.0 { dy_a -= MAP_HEIGHT as f32; }
+            else if dy_a < -(MAP_HEIGHT as f32 / 2.0) { dy_a += MAP_HEIGHT as f32; }
+
+            let mut dx_b = sprites[b].x - player_x;
+            if dx_b > MAP_WIDTH as f32 / 2.0 { dx_b -= MAP_WIDTH as f32; }
+            else if dx_b < -(MAP_WIDTH as f32 / 2.0) { dx_b += MAP_WIDTH as f32; }
+
+            let mut dy_b = sprites[b].y - player_y;
+            if dy_b > MAP_HEIGHT as f32 / 2.0 { dy_b -= MAP_HEIGHT as f32; }
+            else if dy_b < -(MAP_HEIGHT as f32 / 2.0) { dy_b += MAP_HEIGHT as f32; }
+
+            let dist_a = dx_a*dx_a + dy_a*dy_a;
+            let dist_b = dx_b*dx_b + dy_b*dy_b;
             dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
         });
 
         for idx in sorted_indices {
             let sprite = &sprites[idx];
 
-            // Translate relative to player
-            let sprite_x = sprite.x - player_x;
-            let sprite_y = sprite.y - player_y;
+            // Translate relative to player (wrapping on torus)
+            let mut sprite_x = sprite.x - player_x;
+            if sprite_x > MAP_WIDTH as f32 / 2.0 { sprite_x -= MAP_WIDTH as f32; }
+            else if sprite_x < -(MAP_WIDTH as f32 / 2.0) { sprite_x += MAP_WIDTH as f32; }
+
+            let mut sprite_y = sprite.y - player_y;
+            if sprite_y > MAP_HEIGHT as f32 / 2.0 { sprite_y -= MAP_HEIGHT as f32; }
+            else if sprite_y < -(MAP_HEIGHT as f32 / 2.0) { sprite_y += MAP_HEIGHT as f32; }
 
             // Transform matrix inversion
             let inv_det = 1.0 / (plane_x * dir_y - dir_x * plane_y);
@@ -335,12 +354,16 @@ impl Raycaster {
             // Screen X projection
             let sprite_screen_x = ((WIDTH as f32 / 2.0) * (1.0 + transform_x / transform_y)) as i32;
 
-            // Height/width scaling
-            let sprite_height = (HEIGHT as f32 / transform_y).abs() as i32;
-            let sprite_width = (HEIGHT as f32 / transform_y).abs() as i32;
+            // Height/width scaling (citizens are 0.6x wall height, standing on floor)
+            let pos_z = 0.4_f32; // Camera height
+            let full_height = (HEIGHT as f32 / transform_y).abs() as i32;
+            let sprite_height = (full_height as f32 * 0.6) as i32;
+            let sprite_width = (full_height as f32 * 0.6) as i32;
 
-            let draw_start_y = (-sprite_height / 2 + HEIGHT as i32 / 2).clamp(0, HEIGHT as i32 - 1);
-            let draw_end_y = (sprite_height / 2 + HEIGHT as i32 / 2).clamp(0, HEIGHT as i32 - 1);
+            let draw_end_y_unclamped = HEIGHT as i32 / 2 + (pos_z * full_height as f32) as i32;
+            let draw_start_y_unclamped = draw_end_y_unclamped - sprite_height;
+            let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
+            let draw_end_y = draw_end_y_unclamped.clamp(0, HEIGHT as i32 - 1);
 
             let draw_start_x = (-sprite_width / 2 + sprite_screen_x).clamp(0, WIDTH as i32 - 1);
             let draw_end_x = (sprite_width / 2 + sprite_screen_x).clamp(0, WIDTH as i32 - 1);
@@ -359,7 +382,7 @@ impl Raycaster {
                     .clamp(0, TEX_SIZE as i32 - 1) as usize;
 
                 for y in draw_start_y..draw_end_y {
-                    let d = y * 256 - HEIGHT as i32 * 128 + sprite_height * 128;
+                    let d = (y - draw_start_y_unclamped) * 256;
                     let tex_y = (((d * TEX_SIZE as i32) / sprite_height) / 256).clamp(0, TEX_SIZE as i32 - 1) as usize;
 
                     let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];

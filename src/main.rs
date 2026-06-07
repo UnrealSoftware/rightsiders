@@ -44,7 +44,7 @@ fn upload_texture(sprite: &SpriteTexture) -> Texture2D {
     texture
 }
 
-// Project a 3D world coordinate (x, y, z) to 2D screen coordinates
+// Project a 3D world coordinate (x, y, z) to 2D screen coordinates (with torus wrapping)
 fn project_3d(
     x: f32,
     y: f32,
@@ -58,8 +58,13 @@ fn project_3d(
     screen_w: f32,
     screen_h: f32,
 ) -> Option<(f32, f32)> {
-    let dx = x - player_x;
-    let dy = y - player_y;
+    let mut dx = x - player_x;
+    if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+    else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+    let mut dy = y - player_y;
+    if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+    else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
 
     // Inverse camera determinant
     let inv_det = 1.0 / (plane_x * dir_y - dir_x * plane_y);
@@ -69,7 +74,7 @@ fn project_3d(
     // Draw only if in front of player
     if transform_y > 0.08 {
         let sx = (screen_w / 2.0) * (1.0 + transform_x / transform_y);
-        let sy = -(screen_h / transform_y) * (z - 0.5) + screen_h / 2.0;
+        let sy = -(screen_h / transform_y) * (z - 0.4) + screen_h / 2.0;
         Some((sx, sy))
     } else {
         None
@@ -107,37 +112,6 @@ fn draw_pixel_rect_lines(x: f32, y: f32, w: f32, h: f32, thickness: f32, color: 
     draw_rectangle(x, y, t, h, color);
     // Right border
     draw_rectangle(x + w - t, y, t, h, color);
-}
-
-
-
-// Helper to draw a pixelated line using Bresenham's algorithm
-fn draw_pixel_line(x1: f32, y1: f32, x2: f32, y2: f32, thickness: f32, color: Color) {
-    let mut x1 = x1.round() as i32;
-    let mut y1 = y1.round() as i32;
-    let x2 = x2.round() as i32;
-    let y2 = y2.round() as i32;
-    let t = thickness.round().max(1.0) as i32;
-
-    let dx = (x2 - x1).abs();
-    let dy = (y2 - y1).abs();
-    let sx = if x1 < x2 { 1 } else { -1 };
-    let sy = if y1 < y2 { 1 } else { -1 };
-    let mut err = dx - dy;
-
-    loop {
-        draw_rectangle(x1 as f32 - t as f32 / 2.0, y1 as f32 - t as f32 / 2.0, t as f32, t as f32, color);
-        if x1 == x2 && y1 == y2 { break; }
-        let e2 = 2 * err;
-        if e2 > -dy {
-            err -= dy;
-            x1 += sx;
-        }
-        if e2 < dx {
-            err += dx;
-            y1 += sy;
-        }
-    }
 }
 
 // Helper to draw an outline circle on a SpriteTexture (midpoint circle algorithm)
@@ -222,37 +196,20 @@ async fn main() {
         // ==========================================
         // INPUT PROCESSING
         // ==========================================
-        let mut move_forward = 0.0;
-        let mut move_strafe = 0.0;
-        let mut rotate = 0.0;
+        let mut switch_lane_left = false;
+        let mut switch_lane_right = false;
 
         if !is_game_over && !is_bankrupt {
-            // W / S for Forward/Backward
-            if is_key_down(KeyCode::W) {
-                move_forward += 1.0;
+            // A / D to switch lane
+            if is_key_pressed(KeyCode::A) {
+                switch_lane_left = true;
             }
-            if is_key_down(KeyCode::S) {
-                move_forward -= 1.0;
-            }
-
-            // A / D for Strafing Left/Right
-            if is_key_down(KeyCode::A) {
-                move_strafe -= 1.0;
-            }
-            if is_key_down(KeyCode::D) {
-                move_strafe += 1.0;
+            if is_key_pressed(KeyCode::D) {
+                switch_lane_right = true;
             }
 
-            // Q / E for Camera Rotation
-            if is_key_down(KeyCode::Q) {
-                rotate -= 1.0;
-            }
-            if is_key_down(KeyCode::E) {
-                rotate += 1.0;
-            }
-
-            // Shooting: Spacebar or Left Mouse Click
-            if is_key_pressed(KeyCode::Space) || is_mouse_button_pressed(MouseButton::Left) {
+            // Shooting: Spacebar only
+            if is_key_pressed(KeyCode::Space) {
                 state.trigger_fire();
             }
         } else {
@@ -268,7 +225,7 @@ async fn main() {
         // GAME STATE UPDATE
         // ==========================================
         if !is_game_over && !is_bankrupt {
-            state.move_player(move_forward * dt, move_strafe * dt, rotate * dt);
+            state.move_player(switch_lane_left, switch_lane_right);
             state.update(dt);
 
             // Check loss conditions
@@ -518,7 +475,7 @@ async fn main() {
                 Color::from_rgba(57, 255, 20, 220)  // Green theme
             };
 
-            let font_size = 8.0 * ui_scale;
+            let font_size = 4.0 * ui_scale; // Half font size as requested
 
             // Define lines of text to draw
             let line1 = "BIOMETRIC SCAN ACQUIRED";
@@ -558,23 +515,23 @@ async fn main() {
                 .max(d4.width)
                 .max(d5.width);
 
-            // Window border
+            // Window border (tighter fit for half font size)
             let wx = view_x + 15.0 * ui_scale;
             let wy = view_y + 15.0 * ui_scale;
-            let win_w = max_w + 30.0 * ui_scale;
-            let win_h = 105.0 * ui_scale;
+            let win_w = max_w + 16.0 * ui_scale;
+            let win_h = 56.0 * ui_scale;
 
             draw_rectangle(wx, wy, win_w, win_h, Color::from_rgba(10, 15, 25, 200));
             draw_pixel_rect_lines(wx, wy, win_w, win_h, 2.0 * ui_scale, hud_theme);
 
-            // Scanner Details Text
-            let padding_x = 15.0 * ui_scale;
-            let line_y = 18.0 * ui_scale;
-            draw_pixel_text(line1, wx + padding_x, wy + 20.0 * ui_scale, font_size, hud_theme, &font);
-            draw_pixel_text(&line2, wx + padding_x, wy + 20.0 * ui_scale + line_y, font_size, WHITE, &font);
-            draw_pixel_text(&line3, wx + padding_x, wy + 20.0 * ui_scale + line_y * 2.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
-            draw_pixel_text(&line4, wx + padding_x, wy + 20.0 * ui_scale + line_y * 3.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
-            draw_pixel_text(line5, wx + padding_x, wy + 20.0 * ui_scale + line_y * 4.0, font_size, hud_theme, &font);
+            // Scanner Details Text (adjusted offsets)
+            let padding_x = 8.0 * ui_scale;
+            let line_y = 9.0 * ui_scale;
+            draw_pixel_text(line1, wx + padding_x, wy + 10.0 * ui_scale, font_size, hud_theme, &font);
+            draw_pixel_text(&line2, wx + padding_x, wy + 10.0 * ui_scale + line_y, font_size, WHITE, &font);
+            draw_pixel_text(&line3, wx + padding_x, wy + 10.0 * ui_scale + line_y * 2.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
+            draw_pixel_text(&line4, wx + padding_x, wy + 10.0 * ui_scale + line_y * 3.0, font_size, Color::from_rgba(180, 200, 220, 255), &font);
+            draw_pixel_text(line5, wx + padding_x, wy + 10.0 * ui_scale + line_y * 4.0, font_size, hud_theme, &font);
         }
 
         // Firing logs / Compliance banner (Top-Center)
@@ -603,95 +560,19 @@ async fn main() {
             );
         }
 
-        // ==========================================
-        // MINI-MAP INTERFACE (Top-Right) (pixel style)
-        // ==========================================
-        let cell_pixel = (90.0 * ui_scale / MAP_WIDTH as f32).round().max(1.0);
-        let map_size = cell_pixel * MAP_WIDTH as f32;
-        let mx = (view_x + view_w - map_size - 15.0 * ui_scale).round();
-        let my = (view_y + 15.0 * ui_scale).round();
-        
-        draw_rectangle(mx, my, map_size, map_size, Color::from_rgba(10, 15, 25, 220));
-        draw_pixel_rect_lines(mx, my, map_size, map_size, 2.0 * ui_scale, Color::from_rgba(0, 240, 255, 180));
-
-        for grid_x in 0..MAP_WIDTH {
-            for grid_y in 0..MAP_HEIGHT {
-                let cell_x = mx + (grid_x as f32) * cell_pixel;
-                let cell_y = my + (grid_y as f32) * cell_pixel;
-                
-                let tile = state.map.grid[grid_x][grid_y];
-                match tile {
-                    TileType::Wall(_) => {
-                        draw_rectangle(cell_x, cell_y, cell_pixel, cell_pixel, Color::from_rgba(30, 40, 65, 255));
-                    }
-                    TileType::SidewalkVert | TileType::SidewalkHoriz | TileType::Intersection => {
-                        // light gray for paths
-                        draw_rectangle(cell_x, cell_y, cell_pixel, cell_pixel, Color::from_rgba(15, 20, 28, 255));
-                    }
-                    TileType::Road => {
-                        // black for roads
-                        draw_rectangle(cell_x, cell_y, cell_pixel, cell_pixel, Color::from_rgba(5, 5, 8, 255));
-                    }
-                }
-            }
-        }
-
-        // Draw citizens on mini-map (pixel squares)
-        let dot_size = (1.5 * ui_scale).round().max(2.0);
-        for citizen in &state.citizens {
-            if citizen.state == CitizenState::Dead {
-                continue;
-            }
-            let px = mx + (citizen.x / MAP_WIDTH as f32) * map_size;
-            let py = my + (citizen.y / MAP_HEIGHT as f32) * map_size;
-            let c_color = if citizen.is_leftsider || citizen.is_rebel {
-                Color::from_rgba(255, 0, 127, 255) // criminal red
-            } else {
-                Color::from_rgba(57, 255, 20, 255)  // compliant green
-            };
-            draw_rectangle(
-                (px - dot_size / 2.0).round(),
-                (py - dot_size / 2.0).round(),
-                dot_size,
-                dot_size,
-                c_color,
-            );
-        }
-
-        // Draw Player on mini-map (larger pixel square)
-        let p_map_x = mx + (state.player.x / MAP_WIDTH as f32) * map_size;
-        let p_map_y = my + (state.player.y / MAP_HEIGHT as f32) * map_size;
-        let p_dot_size = (3.0 * ui_scale).round().max(3.0);
-        draw_rectangle(
-            (p_map_x - p_dot_size / 2.0).round(),
-            (p_map_y - p_dot_size / 2.0).round(),
-            p_dot_size,
-            p_dot_size,
-            Color::from_rgba(0, 240, 255, 255),
-        );
-        // Direction arrow (pixel line)
-        draw_pixel_line(
-            p_map_x,
-            p_map_y,
-            p_map_x + state.player.dir_x * 5.0 * ui_scale,
-            p_map_y + state.player.dir_y * 5.0 * ui_scale,
-            1.5 * ui_scale,
-            Color::from_rgba(0, 240, 255, 255),
-        );
+        // (Mini-map interface removed as requested)
 
         // ==========================================
         // PLAYER BUDGET DISPLAY (Bottom Left Panel)
         // ==========================================
-        let font_label_size = 7.0 * ui_scale;
         let font_value_size = 8.0 * ui_scale;
 
         let val_str = format!("{} CR", state.player.credits);
         let val_dim = measure_text(&val_str, Some(&font), (font_value_size * 1.3) as u16, 1.0);
-        let label_dim = measure_text("BUDGET BALANCE", Some(&font), font_label_size as u16, 1.0);
 
-        // Size the panel dynamically based on content width
-        let panel_w = (label_dim.width.max(val_dim.width) + 24.0 * ui_scale).round();
-        let panel_h = (46.0 * ui_scale).round();
+        // Size the panel dynamically based on content width (tightly fit)
+        let panel_w = (val_dim.width + 16.0 * ui_scale).round();
+        let panel_h = (val_dim.height + 12.0 * ui_scale).round();
 
         let px = (view_x + 15.0 * ui_scale).round();
         let py = (view_y + view_h - panel_h - 15.0 * ui_scale).round();
@@ -705,8 +586,7 @@ async fn main() {
             Color::from_rgba(57, 255, 20, 255)  // Green positive budget
         };
 
-        draw_pixel_text("BUDGET BALANCE", px + 12.0 * ui_scale, py + 18.0 * ui_scale, font_label_size, Color::from_rgba(180, 200, 220, 255), &font);
-        draw_pixel_text(&val_str, px + 12.0 * ui_scale, py + 36.0 * ui_scale, font_value_size * 1.3, credits_col, &font);
+        draw_pixel_text(&val_str, px + 8.0 * ui_scale, py + val_dim.height + 5.0 * ui_scale, font_value_size * 1.3, credits_col, &font);
 
         // Weapon sprite rendering removed as requested
 
