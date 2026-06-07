@@ -3,6 +3,7 @@ use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
 #[cfg(target_arch = "wasm32")]
 unsafe extern "C" {
     fn play_sfx(ptr: *const u8, len: usize);
+    fn set_menu_active(active: bool);
 }
 
 pub fn play_sound(name: &str) {
@@ -13,6 +14,17 @@ pub fn play_sound(name: &str) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         println!("[sound] {}", name);
+    }
+}
+
+pub fn update_menu_active_js(active: bool) {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        set_menu_active(active);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[menu_active] {}", active);
     }
 }
 
@@ -35,6 +47,20 @@ pub struct BloodDecal {
 pub enum ParticleType {
     BloodSprinkle,
     GoreDebris,
+}
+
+#[derive(Clone)]
+pub struct MenuParticle {
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub lifetime: f32,
+    pub max_lifetime: f32,
+    pub size: f32,
+    pub color_r: u8,
+    pub color_g: u8,
+    pub color_b: u8,
 }
 
 #[derive(Clone)]
@@ -306,6 +332,11 @@ pub struct GameState {
     pub particles: Vec<Particle>,
     pub focus_target_idx: Option<usize>,
     pub focus_text_timer: f32,
+    pub is_in_menu: bool,
+    pub menu_timer: f32,
+    pub menu_selected_idx: usize,
+    pub menu_particles: Vec<MenuParticle>,
+    pub menu_title_landed: bool,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -359,8 +390,16 @@ impl GameState {
             particles: Vec::new(),
             focus_target_idx: None,
             focus_text_timer: 0.0,
+            is_in_menu: true,
+            menu_timer: -3.5, // negative to offset for HTML preloader (~3.2s)
+            menu_selected_idx: 0,
+            menu_particles: Vec::new(),
+            menu_title_landed: false,
             rng_state: 123456789,
         };
+
+        // Notify JS menu is active
+        update_menu_active_js(true);
 
         // Initial citizens will spawn dynamically in the update loop based on player visibility
 
@@ -477,6 +516,10 @@ impl GameState {
 
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
+        if self.is_in_menu {
+            self.menu_timer += dt;
+        }
+
         // Focus scan window typing animation update
         if self.player.target_idx != self.focus_target_idx {
             self.focus_target_idx = self.player.target_idx;
@@ -486,7 +529,7 @@ impl GameState {
         }
 
         // Update player auto-movement and camera orientation
-        if self.player.health > 0.0 {
+        if !self.is_in_menu && self.player.health > 0.0 {
             // Smoothly interpolate lane_offset
             let target_offset = if self.player.is_leftsider { -0.22 } else { 0.22 };
             self.player.lane_offset += (target_offset - self.player.lane_offset) * 8.0 * dt;
@@ -902,7 +945,7 @@ impl GameState {
 
                 match citizen.state {
                     CitizenState::Walking => {
-                        if citizen.is_rebel {
+                        if citizen.is_rebel && !self.is_in_menu {
                             let dx = player_x - citizen.x;
                             let dy = player_y - citizen.y;
                             let dist = (dx*dx + dy*dy).sqrt();
@@ -979,7 +1022,11 @@ impl GameState {
         }
 
         // Recalculate player scanner target
-        self.update_scanner_target();
+        if self.is_in_menu {
+            self.player.target_idx = None;
+        } else {
+            self.update_scanner_target();
+        }
     }
 
     /// Finds the closest citizen directly under the player's crosshair (only on player's own side and lane)
@@ -1094,7 +1141,7 @@ impl GameState {
 
                         if is_lefty || is_rebel {
                             // Correct elimination of criminal
-                            let reward = 100;
+                            let reward = 1000;
                             self.player.credits += reward;
                             play_sound("explosion");
                             

@@ -193,6 +193,38 @@ async fn main() {
         // Frame delta time (capped to prevent physics explosions on lag)
         let dt = get_frame_time().min(0.08);
 
+        let screen_w = screen_width();
+        let screen_h = screen_height();
+
+        // Scale UI based on window size
+        let ui_scale = (screen_w / 800.0).max(screen_h / 600.0).max(1.0) * 1.5;
+
+        let cx = screen_w / 2.0;
+
+        let view_x = 0.0;
+        let view_y = 0.0;
+        let view_w = screen_w;
+        let view_h = screen_h;
+
+        // Button dimensions and positions for input and rendering
+        let btn_font_size = 11.0 * ui_scale;
+        let play_text = "ENFORCE CIVIC DIRECTIVES";
+        let level_text = "SECTOR SELECTION";
+
+        let play_dim = measure_text(play_text, Some(&font), btn_font_size as u16, 1.0);
+        let level_dim = measure_text(level_text, Some(&font), btn_font_size as u16, 1.0);
+
+        let max_btn_w = play_dim.width.max(level_dim.width) + 30.0 * ui_scale;
+        let btn_h = 30.0 * ui_scale;
+
+        // Button 1 (Play) position
+        let p_bx = cx - max_btn_w / 2.0;
+        let p_by = view_y + view_h * 0.52 - btn_h / 2.0;
+
+        // Button 2 (Level Select) position
+        let l_bx = cx - max_btn_w / 2.0;
+        let l_by = view_y + view_h * 0.62 - btn_h / 2.0;
+
         // ==========================================
         // INPUT PROCESSING
         // ==========================================
@@ -200,17 +232,70 @@ async fn main() {
         let mut switch_lane_right = false;
 
         if !is_game_over && !is_bankrupt {
-            // A / D to switch lane
-            if is_key_pressed(KeyCode::A) {
-                switch_lane_left = true;
-            }
-            if is_key_pressed(KeyCode::D) {
-                switch_lane_right = true;
-            }
+            if state.is_in_menu {
+                // Input lockout of 1.5 seconds to let typing load first
+                if state.menu_timer >= 1.5 {
+                    // Keyboard Navigation
+                    let mut select_changed = false;
+                    if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
+                        state.menu_selected_idx = if state.menu_selected_idx == 0 { 1 } else { 0 };
+                        select_changed = true;
+                    }
+                    if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
+                        state.menu_selected_idx = if state.menu_selected_idx == 1 { 0 } else { 1 };
+                        select_changed = true;
+                    }
+                    if select_changed {
+                        game::play_sound("laser"); // tick sound
+                    }
 
-            // Shooting: Spacebar only
-            if is_key_pressed(KeyCode::Space) {
-                state.trigger_fire();
+                    // Mouse Hover Navigation
+                    let (mx, my) = mouse_position();
+                    let hover_play = mx >= p_bx && mx <= p_bx + max_btn_w && my >= p_by && my <= p_by + btn_h;
+                    let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
+
+                    if hover_play {
+                        if state.menu_selected_idx != 0 {
+                            state.menu_selected_idx = 0;
+                            game::play_sound("laser");
+                        }
+                    } else if hover_level {
+                        if state.menu_selected_idx != 1 {
+                            state.menu_selected_idx = 1;
+                            game::play_sound("laser");
+                        }
+                    }
+
+                    // Trigger Selection
+                    let trigger_select = is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) || 
+                        is_mouse_button_pressed(MouseButton::Left);
+
+                    if trigger_select {
+                        if hover_play { state.menu_selected_idx = 0; }
+                        else if hover_level { state.menu_selected_idx = 1; }
+
+                        if state.menu_selected_idx == 0 {
+                            state.is_in_menu = false;
+                            game::update_menu_active_js(false);
+                            game::play_sound("explosion"); // Boom play start sound
+                        } else {
+                            game::play_sound("collateral"); // Error buzz
+                        }
+                    }
+                }
+            } else {
+                // A / D to switch lane
+                if is_key_pressed(KeyCode::A) {
+                    switch_lane_left = true;
+                }
+                if is_key_pressed(KeyCode::D) {
+                    switch_lane_right = true;
+                }
+
+                // Shooting: Spacebar only
+                if is_key_pressed(KeyCode::Space) {
+                    state.trigger_fire();
+                }
             }
         } else {
             // Press R to restart simulation
@@ -369,18 +454,6 @@ async fn main() {
         // ==========================================
         clear_background(Color::from_rgba(10, 11, 16, 255));
 
-        let screen_w = screen_width();
-        let screen_h = screen_height();
-
-        // Scale UI based on window size
-        let ui_scale = (screen_w / 800.0).max(screen_h / 600.0).max(1.0) * 1.5;
-
-        // Sized to take up the full screen
-        let view_x = 0.0;
-        let view_y = 0.0;
-        let view_w = screen_w;
-        let view_h = screen_h;
-
         // Draw Raycaster screen with shake offset
         let mut shake_x = 0.0;
         let mut shake_y = 0.0;
@@ -465,9 +538,254 @@ async fn main() {
             draw_rectangle(view_x, view_y, view_w, view_h, Color::new(1.0, 1.0, 1.0, opacity));
         }
 
-        // ==========================================
-        // HUD RETICLE & CORE INTERFACES
-        // ==========================================
+        if state.is_in_menu {
+            // ==========================================
+            // MAIN MENU OVERLAY & INTERFACE
+            // ==========================================
+            // 1. Dim background
+            draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 200));
+
+            // 2. Animated text setup
+            let title_text = "RIGHT SIDERS";
+            let slogan_base = "go right, be right";
+            let slogan_full = "go right, be right*"; // with asterisk for measurement
+            let note_text = "*not in a political way";
+
+            // ---- Title slide-in animation ----
+            let slide_duration = 1.0f32; // seconds for the slide-in
+            let slide_progress = (state.menu_timer / slide_duration).clamp(0.0, 1.0);
+            // Ease-out cubic: fast start, smooth deceleration
+            let ease = 1.0 - (1.0 - slide_progress).powi(3);
+            let title_landed = slide_progress >= 1.0;
+
+            // Spawn explosion particles once when title lands
+            if title_landed && !state.menu_title_landed {
+                state.menu_title_landed = true;
+                // Spawn burst of particles at the collision point
+                let collision_x = cx; // center of screen where the two halves meet
+                let collision_y = view_y + view_h * 0.25;
+                let num_particles = 40;
+                for i in 0..num_particles {
+                    // Deterministic spread using index
+                    let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU
+                        + (i as f32 * 2.399); // golden angle offset for variety
+                    let speed = 80.0 * ui_scale + (i as f32 % 5.0) * 40.0 * ui_scale;
+                    let vx = angle.cos() * speed;
+                    let vy = angle.sin() * speed;
+                    // Alternate between cyan and pink particles
+                    let (r, g, b) = if i % 2 == 0 { (0u8, 240u8, 255u8) } else { (255u8, 0u8, 127u8) };
+                    state.menu_particles.push(crate::game::MenuParticle {
+                        x: collision_x,
+                        y: collision_y,
+                        vx,
+                        vy,
+                        lifetime: 0.0,
+                        max_lifetime: 0.6 + (i as f32 % 4.0) * 0.15,
+                        size: 2.0 * ui_scale + (i as f32 % 3.0) * ui_scale,
+                        color_r: r,
+                        color_g: g,
+                        color_b: b,
+                    });
+                }
+            }
+
+            // Update menu particles
+            {
+                let dt = get_frame_time();
+                for p in state.menu_particles.iter_mut() {
+                    p.lifetime += dt;
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    p.vy += 120.0 * ui_scale * dt; // gravity
+                    p.vx *= 0.98; // drag
+                }
+                state.menu_particles.retain(|p| p.lifetime < p.max_lifetime);
+            }
+
+            // Slogan typewriter (no asterisk yet)
+            let slogan_start_time = slide_duration + 0.3; // slogan starts after title lands
+            let slogan_chars = ((state.menu_timer - slogan_start_time) * 15.0).max(0.0) as usize;
+            let slogan_visible = &slogan_base[0..slogan_chars.min(slogan_base.len())];
+            let slogan_done = slogan_chars >= slogan_base.len();
+            let mut slogan_display = slogan_visible.to_string();
+            if slogan_chars > 0 && !slogan_done {
+                if (get_time() * 12.0) as i32 % 2 == 0 {
+                    slogan_display.push('_');
+                }
+            }
+
+            // Note + asterisk: smooth fade in/out (pulsing), appears directly
+            // The note fades in once the slogan is done
+            let note_fade_start = slogan_start_time + (slogan_base.len() as f32) / 15.0 + 0.5;
+            let note_active = state.menu_timer > note_fade_start;
+            let note_alpha = if note_active {
+                // Smooth pulsing fade: sine wave between 0.3 and 1.0
+                let t = (state.menu_timer - note_fade_start) as f64;
+                let fade_in = (t * 2.0).min(1.0); // fade in over 0.5s
+                let pulse = (t * 3.0).sin() * 0.35 + 0.65; // pulse between 0.3 and 1.0 (2x speed)
+                (fade_in * pulse) as f32
+            } else {
+                0.0f32
+            };
+
+            // Add asterisk to slogan when note is visible
+            if note_active {
+                slogan_display = slogan_full.to_string();
+            }
+
+            // ---- Draw Title with slide-in ----
+            let title_font_size_f = 24.0 * ui_scale;
+            let full_title_dim = measure_text(title_text, Some(&font), title_font_size_f as u16, 1.0);
+            // Final resting position (centered)
+            let title_final_x = cx - full_title_dim.width / 2.0;
+            let title_y = view_y + view_h * 0.25;
+
+            let glow_offset = 2.0 * ui_scale;
+            let pulse = (get_time() * 6.0).sin() as f32 * 0.25 + 0.75;
+
+            // Measure "RIGHT " to know where SIDERS starts
+            let right_text = "RIGHT ";
+            let siders_text = "SIDERS";
+            let right_dim = measure_text(right_text, Some(&font), title_font_size_f as u16, 1.0);
+
+            // Calculate slide offsets
+            let slide_distance = view_w; // start fully off-screen
+            let right_offset_x = -slide_distance * (1.0 - ease); // comes from left
+            let siders_offset_x = slide_distance * (1.0 - ease); // comes from right
+
+            let right_final_x = title_final_x;
+            let siders_final_x = title_final_x + right_dim.width;
+
+            let right_draw_x = right_final_x + right_offset_x;
+            let siders_draw_x = siders_final_x + siders_offset_x;
+
+            // Shadow colors (inverted)
+            let shadow_color_right = Color::from_rgba(255, 0, 127, (120.0 * pulse) as u8); // pink shadow for RIGHT
+            let shadow_color_siders = Color::from_rgba(0, 240, 255, (120.0 * pulse) as u8); // cyan shadow for SIDERS
+
+            // Text colors
+            let text_color_right = Color::from_rgba(0, 240, 255, 255); // cyan
+            let text_color_siders = Color::from_rgba(255, 0, 127, 255); // pink
+
+            // Draw RIGHT part (slides in from left)
+            draw_pixel_text(right_text, right_draw_x + glow_offset, title_y + glow_offset, title_font_size_f, shadow_color_right, &font);
+            draw_pixel_text(right_text, right_draw_x, title_y, title_font_size_f, text_color_right, &font);
+
+            // Draw SIDERS part (slides in from right)
+            draw_pixel_text(siders_text, siders_draw_x + glow_offset, title_y + glow_offset, title_font_size_f, shadow_color_siders, &font);
+            draw_pixel_text(siders_text, siders_draw_x, title_y, title_font_size_f, text_color_siders, &font);
+
+            // Draw explosion particles
+            for p in &state.menu_particles {
+                let alpha = 1.0 - (p.lifetime / p.max_lifetime);
+                let a = (alpha * 255.0) as u8;
+                let size = p.size * alpha; // shrink as they fade
+                draw_rectangle(
+                    p.x - size / 2.0,
+                    p.y - size / 2.0,
+                    size,
+                    size,
+                    Color::from_rgba(p.color_r, p.color_g, p.color_b, a),
+                );
+            }
+
+            // Draw Slogan (size 10, neon green)
+            // Measure the FULL slogan (with asterisk) for stable centering
+            if slogan_chars > 0 || note_active {
+                let slogan_font_size = 10.0 * ui_scale;
+                let full_slogan_dim = measure_text(slogan_full, Some(&font), slogan_font_size as u16, 1.0);
+                let slogan_x = cx - full_slogan_dim.width / 2.0;
+                // If note is active, the asterisk gets the pulsing alpha
+                if note_active {
+                    // Draw slogan base in full green
+                    let base_dim = measure_text(slogan_base, Some(&font), slogan_font_size as u16, 1.0);
+                    draw_pixel_text(slogan_base, slogan_x, view_y + view_h * 0.35, slogan_font_size, Color::from_rgba(57, 255, 20, 255), &font);
+                    // Draw the asterisk with fading alpha
+                    let asterisk_x = slogan_x + base_dim.width;
+                    let star_alpha = (note_alpha * 255.0) as u8;
+                    draw_pixel_text("*", asterisk_x, view_y + view_h * 0.35, slogan_font_size, Color::from_rgba(57, 255, 20, star_alpha), &font);
+                } else {
+                    draw_pixel_text(&slogan_display, slogan_x, view_y + view_h * 0.35, slogan_font_size, Color::from_rgba(57, 255, 20, 255), &font);
+                }
+            }
+
+            // Draw Buttons (smooth fade-in after title lands)
+            let buttons_start = slide_duration + 0.5;
+            let buttons_alpha = ((state.menu_timer - buttons_start) * 2.5).clamp(0.0, 1.0);
+            if buttons_alpha > 0.01 {
+                // Determine hover states for button background brightness
+                let (mx, my) = mouse_position();
+                let hover_play = mx >= p_bx && mx <= p_bx + max_btn_w && my >= p_by && my <= p_by + btn_h;
+                let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
+
+                // Button 1 (Play)
+                let play_bg_col = if state.menu_selected_idx == 0 || hover_play {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let play_border_col = if state.menu_selected_idx == 0 {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let play_text_col = if state.menu_selected_idx == 0 || hover_play {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(p_bx, p_by, max_btn_w, btn_h, play_bg_col);
+                draw_pixel_rect_lines(p_bx, p_by, max_btn_w, btn_h, 2.0 * ui_scale, play_border_col);
+                draw_pixel_text(
+                    play_text,
+                    cx - play_dim.width / 2.0,
+                    p_by + btn_h / 2.0 + play_dim.height / 2.0 - 2.0 * ui_scale,
+                    btn_font_size,
+                    play_text_col,
+                    &font,
+                );
+
+                // Button 2 (Level Select)
+                let level_bg_col = if state.menu_selected_idx == 1 || hover_level {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let level_border_col = if state.menu_selected_idx == 1 {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let level_text_col = if state.menu_selected_idx == 1 || hover_level {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(l_bx, l_by, max_btn_w, btn_h, level_bg_col);
+                draw_pixel_rect_lines(l_bx, l_by, max_btn_w, btn_h, 2.0 * ui_scale, level_border_col);
+                draw_pixel_text(
+                    level_text,
+                    cx - level_dim.width / 2.0,
+                    l_by + btn_h / 2.0 + level_dim.height / 2.0 - 2.0 * ui_scale,
+                    btn_font_size,
+                    level_text_col,
+                    &font,
+                );
+            }
+
+            // Draw Side Note at bottom (fades in/out smoothly)
+            if note_active {
+                let note_font_size = 7.0 * ui_scale;
+                let note_dim = measure_text(note_text, Some(&font), note_font_size as u16, 1.0);
+                let na = (note_alpha * 255.0) as u8;
+                draw_pixel_text(note_text, cx - note_dim.width / 2.0, view_y + view_h * 0.85, note_font_size, Color::from_rgba(148, 163, 184, na), &font);
+            }
+        } else {
+            // ==========================================
+            // HUD RETICLE & CORE INTERFACES
+            // ==========================================
         let cx = view_x + view_w / 2.0;
         let cy = view_y + view_h / 2.0;
 
@@ -715,6 +1033,7 @@ async fn main() {
             draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
             draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
             draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
+        }
         }
 
         next_frame().await;

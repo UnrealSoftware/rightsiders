@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RIGHTSIDERS // REU-99 Tactical Simulator</title>
+    <title>RIGHTSIDERS - go right, be right*</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -363,7 +363,7 @@
 
     <header>
         <div class="logo">
-            RIGHT<span>SIDERS</span> <span style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px;">REU-99 SIMULATOR</span>
+            RIGHT<span>SIDERS</span> <span style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px;">APEX  PRIME; UNIT KX-128#67</span>
         </div>
         <div class="status-badge" id="sim-status">
             System Online
@@ -390,17 +390,17 @@
 
         <div id="help-overlay" class="control-panel collapsible-hud">
             <div>
-                <h2>Directive Overview</h2>
+                <h2>Directive</h2>
                 <div class="lore-box">
-                    Patrol the futuristic city streets. Ensure all citizens walk in their <strong>RIGHT-HAND LANE</strong> relative to their movement direction. If a citizen wanders onto the <strong>LEFT-HAND SIDE</strong> of the centerline, they are in violation of Civic Code 99-A. Target them with your biometric scanner and execute immediately.
+                    City of Apex Prime, year 2087. You are law enforcement unit KX-128#67. Ensure all citizens walk in their <strong>RIGHT-HAND LANE</strong> relative to their movement direction. If a citizen wanders onto the <strong>LEFT-HAND SIDE</strong> of the centerline, they are in violation of Civic Code 99-A. Target them with your biometric scanner and execute immediately.
                 </div>
             </div>
 
             <div>
-                <h2>Sim Controls</h2>
+                <h2>Controls</h2>
                 <ul class="instruction-list">
                     <li class="instruction-item">
-                        <span>Switch Lane Left / Right</span>
+                        <span>Switch Lane</span>
                         <span><kbd class="key-badge">A</kbd> / <kbd class="key-badge">D</kbd></span>
                     </li>
                     <li class="instruction-item">
@@ -411,19 +411,21 @@
             </div>
 
             <div class="compliance-directive">
-                <strong>CRITICAL REMINDER:</strong>
-                Collateral damage is strictly penalized. Shooting compliant "Rightsiders" (walking in the Green Lane) will result in a heavy budget penalty (-500 Credits) and shield depletion. Maintain 100% vigilance!
+                <strong>REMINDER:</strong>
+                Collateral damage is penalized. Shooting compliant citizens will result in budget penalty. Maintain 100% vigilance!
             </div>
         </div>
     </main>
 
     <footer>
-        RIGHTSIDERS Tactical Simulator v1.0.0 // Built on Rust + WebAssembly
+        RIGHTSIDERS // Built on Rust + WebAssembly // <a href="https://www.unrealsoftware.de/contact.php">CONTACT</a>
     </footer>
 
     <!-- Macroquad Loader JS -->
     <script src="https://not-fl3.github.io/miniquad-samples/gl.js"></script>
     <script>
+        let menuActive = true; // Starts in main menu
+
         // Hide loader when WASM starts and manage canvas focus
         window.addEventListener('load', () => {
             const canvas = document.getElementById("glcanvas");
@@ -444,6 +446,7 @@
             const helpOverlay = document.getElementById("help-overlay");
             
             function toggleHelp() {
+                if (menuActive) return; // Force open, cannot toggle during menu
                 if (helpOverlay) helpOverlay.classList.toggle("open");
             }
             
@@ -460,12 +463,14 @@
                 }
             });
 
-            // Open controls on start, then close after 6 seconds
+            // Open controls on start, then close after 6 seconds (if not in menu)
             setTimeout(() => {
                 if (helpOverlay) {
                     helpOverlay.classList.add("open");
                     setTimeout(() => {
-                        helpOverlay.classList.remove("open");
+                        if (!menuActive) {
+                            helpOverlay.classList.remove("open");
+                        }
                     }, 6000);
                 }
             }, 100);
@@ -547,6 +552,17 @@
                 importObject.env.play_sfx = (ptr, len) => {
                     const soundType = UTF8ToString(ptr, len);
                     playSound(soundType);
+                };
+                importObject.env.set_menu_active = (active) => {
+                    menuActive = active ? true : false;
+                    const helpOverlay = document.getElementById("help-overlay");
+                    if (helpOverlay) {
+                        if (menuActive) {
+                            helpOverlay.classList.add("open");
+                        } else {
+                            helpOverlay.classList.remove("open");
+                        }
+                    }
                 };
             },
             on_init: () => {}
