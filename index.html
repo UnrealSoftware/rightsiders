@@ -378,8 +378,8 @@
 
         @keyframes startBlink {
             from {
-                opacity: 0.45;
-                box-shadow: 0 0 5px rgba(57, 255, 20, 0.1);
+                opacity: 0.05;
+                box-shadow: 0 0 5px rgba(57, 255, 20, 0.05);
             }
             to {
                 opacity: 1;
@@ -451,6 +451,8 @@
                 Collateral damage is penalized. Shooting compliant citizens will result in budget penalty. Maintain 100% vigilance!
             </div>
         </div>
+        
+
     </main>
 
     <footer>
@@ -600,7 +602,7 @@
                 startBtn.style.background = "rgba(57, 255, 20, 0.05)";
                 startBtn.style.cursor = "pointer";
                 startBtn.style.letterSpacing = "2px";
-                startBtn.style.animation = "startBlink 0.4s infinite alternate"; // 3x faster blink
+                startBtn.style.animation = "startBlink 0.13s infinite alternate"; // 3x faster intense blink
                 startBtn.style.transition = "all 0.2s ease";
                 startBtn.textContent = "[ CLICK TO START ]";
 
@@ -631,6 +633,8 @@
                     }
                 });
             }, 3200);
+
+
         });
 
         // ======================================================
@@ -672,12 +676,17 @@
             }
         });
 
+
+
         // Expose a JavaScript function hook into Macroquad imports object
         miniquad_add_plugin({
             register_plugin: (importObject) => {
                 importObject.env.play_sfx = (ptr, len) => {
                     const soundType = UTF8ToString(ptr, len);
                     playSound(soundType);
+                };
+                importObject.env.is_game_started_js = () => {
+                    return gameStarted;
                 };
                 importObject.env.set_menu_active = (active) => {
                     menuActive = active ? true : false;
@@ -688,6 +697,51 @@
                         } else {
                             helpOverlay.classList.remove("open");
                         }
+                    }
+                };
+                importObject.env.report_game_over_js = (score) => {
+                    // Deprecated/noop
+                };
+                importObject.env.load_scores_js = (ptr, max_len) => {
+                    try {
+                        let scoresStr = "";
+                        const data = localStorage.getItem("rightsiders_highscores_rust");
+                        if (data) {
+                            scoresStr = data;
+                        } else {
+                            // Try to migrate from old rightsiders_highscores
+                            const oldData = localStorage.getItem("rightsiders_highscores");
+                            if (oldData) {
+                                try {
+                                    const parsed = JSON.parse(oldData);
+                                    if (Array.isArray(parsed)) {
+                                        scoresStr = parsed.map(item => `${item.name}:${item.score}`).join(",");
+                                    }
+                                } catch(e) {}
+                            }
+                        }
+                        if (!scoresStr) {
+                            scoresStr = "APX:2500,LAW:2000,KXX:1500,PRM:1000,SEC:800,COP:600,DED:500,BAD:400,OUT:300,AAA:100";
+                        }
+                        const encoder = new TextEncoder();
+                        const bytes = encoder.encode(scoresStr);
+                        const len = Math.min(bytes.length, max_len);
+                        const view = new Uint8Array(wasm_memory.buffer, ptr, len);
+                        view.set(bytes.subarray(0, len));
+                        return len;
+                    } catch (e) {
+                        console.error("load_scores_js error:", e);
+                        return 0;
+                    }
+                };
+                importObject.env.save_scores_js = (ptr, len) => {
+                    try {
+                        const view = new Uint8Array(wasm_memory.buffer, ptr, len);
+                        const decoder = new TextDecoder();
+                        const scoresStr = decoder.decode(view);
+                        localStorage.setItem("rightsiders_highscores_rust", scoresStr);
+                    } catch (e) {
+                        console.error("save_scores_js error:", e);
                     }
                 };
             },
@@ -760,20 +814,20 @@
                 noise.stop(now + 0.22);
             } 
             else if (type === 'impact') {
-                // High-pitched retro landing impact pop/thud (less deep, lower volume)
+                // Deeper and louder retro landing impact thud
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'triangle';
-                osc.frequency.setValueAtTime(220, now);
-                osc.frequency.linearRampToValueAtTime(80, now + 0.06);
+                osc.frequency.setValueAtTime(100, now);
+                osc.frequency.linearRampToValueAtTime(20, now + 0.12);
 
-                gain.gain.setValueAtTime(0.12, now); // slightly louder volume (0.12 instead of 0.06)
-                gain.gain.linearRampToValueAtTime(0.001, now + 0.06);
+                gain.gain.setValueAtTime(0.40, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.12);
 
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
                 osc.start(now);
-                osc.stop(now + 0.07);
+                osc.stop(now + 0.13);
             }
             else if (type === 'scan_tick') {
                 // High-pitched barely noticeable short tick sound for UI typing
@@ -871,6 +925,58 @@
                 gain.connect(audioCtx.destination);
                 osc.start(now);
                 osc.stop(now + 0.16);
+            }
+            else if (type.startsWith('countdown_beep')) {
+                // High-pitched retro warning beep, pitch increases as seconds decrease
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                
+                let freq = 1200;
+                const parts = type.split('_');
+                if (parts.length > 2) {
+                    const sec = parseInt(parts[2]);
+                    if (!isNaN(sec) && sec >= 1 && sec <= 10) {
+                        freq = 1000 + (10 - sec) * 150; // 1000 Hz at 10s, scaling up to 2350 Hz at 1s
+                    }
+                }
+                osc.frequency.setValueAtTime(freq, now);
+                
+                gain.gain.setValueAtTime(0.18, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.13);
+            }
+            else if (type === 'time_over') {
+                // Deeper, longer, and louder dramatic descending power-down siren
+                const duration = 1.5;
+                const osc1 = audioCtx.createOscillator();
+                const osc2 = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc1.type = 'sawtooth';
+                osc2.type = 'triangle';
+                
+                osc1.frequency.setValueAtTime(240, now);
+                osc1.frequency.exponentialRampToValueAtTime(20, now + duration);
+                
+                osc2.frequency.setValueAtTime(120, now);
+                osc2.frequency.exponentialRampToValueAtTime(10, now + duration);
+                
+                gain.gain.setValueAtTime(0.65, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                
+                osc1.connect(gain);
+                osc2.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc1.start(now);
+                osc2.start(now);
+                osc1.stop(now + duration);
+                osc2.stop(now + duration);
             }
         }
 

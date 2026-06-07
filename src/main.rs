@@ -24,6 +24,28 @@ fn window_conf() -> Conf {
     }
 }
 
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> Color {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = l - c / 2.0;
+    
+    let (r, g, b) = if h < 60.0 {
+        (c, x, 0.0)
+    } else if h < 120.0 {
+        (x, c, 0.0)
+    } else if h < 180.0 {
+        (0.0, c, x)
+    } else if h < 240.0 {
+        (0.0, x, c)
+    } else if h < 300.0 {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+    
+    Color::new(r + m, g + m, b + m, 1.0)
+}
+
 // Convert procedural CPU texture to GPU Texture2D
 fn upload_texture(sprite: &SpriteTexture) -> Texture2D {
     let mut bytes = vec![0u8; sprite.width * sprite.height * 4];
@@ -226,21 +248,27 @@ async fn main() {
         // Button dimensions and positions for input and rendering
         let btn_font_size = 11.0 * ui_scale;
         let play_text = "ENFORCE CIVIC DIRECTIVES";
+        let highscore_text = "UNIT LEADERBOARD";
         let level_text = "SECTOR SELECTION";
 
         let play_dim = measure_text(play_text, Some(&font), btn_font_size as u16, 1.0);
+        let highscore_dim = measure_text(highscore_text, Some(&font), btn_font_size as u16, 1.0);
         let level_dim = measure_text(level_text, Some(&font), btn_font_size as u16, 1.0);
 
-        let max_btn_w = play_dim.width.max(level_dim.width) + 30.0 * ui_scale;
+        let max_btn_w = play_dim.width.max(highscore_dim.width).max(level_dim.width) + 30.0 * ui_scale;
         let btn_h = 30.0 * ui_scale;
 
         // Button 1 (Play) position
         let p_bx = cx - max_btn_w / 2.0;
-        let p_by = view_y + view_h * 0.52 - btn_h / 2.0;
+        let p_by = view_y + view_h * 0.48 - btn_h / 2.0;
 
-        // Button 2 (Level Select) position
+        // Button 2 (Highscore) position
+        let h_bx = cx - max_btn_w / 2.0;
+        let h_by = view_y + view_h * 0.58 - btn_h / 2.0;
+
+        // Button 3 (Level Select) position
         let l_bx = cx - max_btn_w / 2.0;
-        let l_by = view_y + view_h * 0.62 - btn_h / 2.0;
+        let l_by = view_y + view_h * 0.68 - btn_h / 2.0;
 
         // ==========================================
         // INPUT PROCESSING
@@ -248,18 +276,35 @@ async fn main() {
         let mut switch_lane_left = false;
         let mut switch_lane_right = false;
 
-        if !is_game_over && !is_bankrupt {
+        if state.show_leaderboard {
+            if is_key_pressed(KeyCode::Enter) {
+                if is_game_over || is_bankrupt {
+                    state = GameState::new();
+                    is_game_over = false;
+                    is_bankrupt = false;
+                } else {
+                    // Return to menu from leaderboard
+                    state.show_leaderboard = false;
+                    state.is_in_menu = true;
+                    state.menu_timer = 0.0;
+                    state.menu_title_landed = false;
+                    state.menu_particles.clear();
+                    game::update_menu_active_js(true);
+                    game::play_sound("laser");
+                }
+            }
+        } else if !is_game_over && !is_bankrupt {
             if state.is_in_menu {
-                // Input lockout of 1.5 seconds to let typing load first
-                if state.menu_timer >= 1.5 {
+                // Input lockout of 1.17 seconds to let title land and buttons start appearing
+                if state.menu_timer >= 1.17 {
                     // Keyboard Navigation
                     let mut select_changed = false;
                     if is_key_pressed(KeyCode::W) || is_key_pressed(KeyCode::Up) {
-                        state.menu_selected_idx = if state.menu_selected_idx == 0 { 1 } else { 0 };
+                        state.menu_selected_idx = if state.menu_selected_idx == 0 { 2 } else { state.menu_selected_idx - 1 };
                         select_changed = true;
                     }
                     if is_key_pressed(KeyCode::S) || is_key_pressed(KeyCode::Down) {
-                        state.menu_selected_idx = if state.menu_selected_idx == 1 { 0 } else { 1 };
+                        state.menu_selected_idx = if state.menu_selected_idx == 2 { 0 } else { state.menu_selected_idx + 1 };
                         select_changed = true;
                     }
                     if select_changed {
@@ -268,6 +313,7 @@ async fn main() {
 
                     // Mouse Hover Navigation
                     let hover_play = mx >= p_bx && mx <= p_bx + max_btn_w && my >= p_by && my <= p_by + btn_h;
+                    let hover_highscore = mx >= h_bx && mx <= h_bx + max_btn_w && my >= h_by && my <= h_by + btn_h;
                     let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
 
                     if hover_play {
@@ -275,9 +321,14 @@ async fn main() {
                             state.menu_selected_idx = 0;
                             game::play_sound("laser");
                         }
-                    } else if hover_level {
+                    } else if hover_highscore {
                         if state.menu_selected_idx != 1 {
                             state.menu_selected_idx = 1;
+                            game::play_sound("laser");
+                        }
+                    } else if hover_level {
+                        if state.menu_selected_idx != 2 {
+                            state.menu_selected_idx = 2;
                             game::play_sound("laser");
                         }
                     }
@@ -288,12 +339,21 @@ async fn main() {
 
                     if trigger_select {
                         if hover_play { state.menu_selected_idx = 0; }
-                        else if hover_level { state.menu_selected_idx = 1; }
+                        else if hover_highscore { state.menu_selected_idx = 1; }
+                        else if hover_level { state.menu_selected_idx = 2; }
 
                         if state.menu_selected_idx == 0 {
                             state.is_in_menu = false;
+                            state.menu_timer = 0.0; // reset menu timer to 0 on exit
                             game::update_menu_active_js(false);
                             game::play_sound("explosion"); // Boom play start sound
+                        } else if state.menu_selected_idx == 1 {
+                            state.leaderboard_data = state.load_leaderboard_rust();
+                            state.is_entering_highscore = false;
+                            state.show_leaderboard = true;
+                            state.is_in_menu = false; // deactivate menu to show leaderboard overlay
+                            state.menu_timer = 0.0; // reset menu timer to 0 on exit
+                            game::play_sound("explosion");
                         } else {
                             game::play_sound("collateral"); // Error buzz
                         }
@@ -322,21 +382,31 @@ async fn main() {
                     state.trigger_fire();
                 }
             }
-        } else {
-            // Press R to restart simulation
-            if is_key_pressed(KeyCode::R) {
-                state = GameState::new();
-                is_game_over = false;
-                is_bankrupt = false;
-            }
         }
 
         // ==========================================
         // GAME STATE UPDATE
         // ==========================================
-        if !is_game_over && !is_bankrupt {
+        if !is_game_over && !is_bankrupt && !state.show_leaderboard {
             state.move_player(switch_lane_left, switch_lane_right);
             state.update(dt);
+
+            // Tick countdown
+            if !state.is_in_menu {
+                state.time_left -= dt;
+                if state.time_left <= 0.0 {
+                    state.time_left = 0.0;
+                    is_game_over = true;
+                    game::play_sound("time_over");
+                }
+
+                // Countdown beeps for the last 10 seconds
+                let current_sec = state.time_left.ceil() as i32;
+                if current_sec <= 10 && current_sec > 0 && current_sec < state.last_beep_second {
+                    state.last_beep_second = current_sec;
+                    game::play_sound("countdown_beep");
+                }
+            }
 
             // Check loss conditions
             if state.player.health <= 0.0 {
@@ -344,6 +414,65 @@ async fn main() {
             }
             if state.player.credits <= -1000 {
                 is_bankrupt = true;
+            }
+
+            // Trigger highscore entry state on completion
+            if is_game_over || is_bankrupt {
+                state.is_entering_highscore = true;
+                state.highscore_name = String::new();
+                state.highscore_input_delay = 0.5; // Block input for 0.5 seconds
+                
+                // Play end game sound on bankruptcy/health critical transitions
+                if is_bankrupt || state.player.health <= 0.0 {
+                    game::play_sound("time_over");
+                }
+
+                // Drain any buffered characters pressed during gameplay
+                while let Some(_) = get_char_pressed() {}
+            }
+        } else {
+            if state.is_entering_highscore {
+                if state.highscore_input_delay > 0.0 {
+                    state.highscore_input_delay -= dt;
+                    // Drain any key presses while blocked
+                    while let Some(_) = get_char_pressed() {}
+                } else {
+                    if is_bankrupt {
+                        // Decommissioned case: Skip name input, press Enter to continue
+                        if is_key_pressed(KeyCode::Enter) {
+                            state.leaderboard_data = state.load_leaderboard_rust();
+                            state.new_rank = None;
+                            state.is_entering_highscore = false;
+                            state.show_leaderboard = true;
+                            game::play_sound("explosion");
+                        }
+                    } else {
+                        while let Some(c) = get_char_pressed() {
+                            if c.is_ascii_alphabetic() && state.highscore_name.len() < 3 {
+                                state.highscore_name.push(c.to_ascii_uppercase());
+                                game::play_sound("laser");
+                            }
+                        }
+                        if is_key_pressed(KeyCode::Backspace) {
+                            state.highscore_name.pop();
+                            game::play_sound("laser");
+                        }
+                        if is_key_pressed(KeyCode::Enter) && state.highscore_name.len() == 3 {
+                            state.save_highscore_rust(&state.highscore_name, state.player.credits);
+                            state.leaderboard_data = state.load_leaderboard_rust();
+                            state.new_rank = None;
+                            for (idx, (n, s)) in state.leaderboard_data.iter().enumerate() {
+                                if n == &state.highscore_name && *s == state.player.credits {
+                                    state.new_rank = Some(idx);
+                                    break;
+                                }
+                            }
+                            state.is_entering_highscore = false;
+                            state.show_leaderboard = true;
+                            game::play_sound("explosion");
+                        }
+                    }
+                }
             }
         }
 
@@ -620,9 +749,14 @@ async fn main() {
             if title_landed && !state.menu_title_landed {
                 state.menu_title_landed = true;
                 game::play_sound("menu_explosion");
+
+                let title_font_size_f = 24.0 * ui_scale;
+                let full_title_dim = measure_text(title_text, Some(&font), title_font_size_f as u16, 1.0);
+                let char_width = full_title_dim.width / 12.0;
+
                 // Spawn burst of particles at the collision point
-                let collision_x = cx; // center of screen where the two halves meet
-                let collision_y = view_y + view_h * 0.25;
+                let collision_x = cx - char_width / 2.0;
+                let collision_y = view_y + view_h * 0.25 - full_title_dim.height / 2.0;
                 let num_particles = 40;
                 for i in 0..num_particles {
                     // Deterministic spread using index
@@ -678,10 +812,10 @@ async fn main() {
             let note_fade_start = slogan_start_time + (slogan_base.len() as f32) / 15.0 + 0.5;
             let note_active = state.menu_timer > note_fade_start;
             let note_alpha = if note_active {
-                // Smooth pulsing fade: sine wave between 0.3 and 1.0
+                // Smooth pulsing fade: sine wave between 0.05 and 1.0 (9.0 instead of 3.0 for 3x speed)
                 let t = (state.menu_timer - note_fade_start) as f64;
                 let fade_in = (t * 2.0).min(1.0); // fade in over 0.5s
-                let pulse = (t * 3.0).sin() * 0.35 + 0.65; // pulse between 0.3 and 1.0 (2x speed)
+                let pulse = (t * 9.0).sin() * 0.475 + 0.525; 
                 (fade_in * pulse) as f32
             } else {
                 0.0f32
@@ -769,11 +903,12 @@ async fn main() {
             }
 
             // Draw Buttons (smooth fade-in after title lands)
-            let buttons_start = slide_duration + 0.5;
-            let buttons_alpha = ((state.menu_timer - buttons_start) * 2.5).clamp(0.0, 1.0);
+            let buttons_start = slide_duration + 0.17; // 3x faster delay (0.5 / 3 ≈ 0.17)
+            let buttons_alpha = ((state.menu_timer - buttons_start) * 7.5).clamp(0.0, 1.0); // 3x faster fade-in (2.5 * 3 = 7.5)
             if buttons_alpha > 0.01 {
                 // Determine hover states for button background brightness
                 let hover_play = mx >= p_bx && mx <= p_bx + max_btn_w && my >= p_by && my <= p_by + btn_h;
+                let hover_highscore = mx >= h_bx && mx <= h_bx + max_btn_w && my >= h_by && my <= h_by + btn_h;
                 let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
 
                 // Button 1 (Play)
@@ -804,18 +939,46 @@ async fn main() {
                     &font,
                 );
 
-                // Button 2 (Level Select)
-                let level_bg_col = if state.menu_selected_idx == 1 || hover_level {
+                // Button 2 (Highscore)
+                let highscore_bg_col = if state.menu_selected_idx == 1 || hover_highscore {
                     Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
                 } else {
                     Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
                 };
-                let level_border_col = if state.menu_selected_idx == 1 {
+                let highscore_border_col = if state.menu_selected_idx == 1 {
                     Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
                 } else {
                     Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
                 };
-                let level_text_col = if state.menu_selected_idx == 1 || hover_level {
+                let highscore_text_col = if state.menu_selected_idx == 1 || hover_highscore {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(h_bx, h_by, max_btn_w, btn_h, highscore_bg_col);
+                draw_pixel_rect_lines(h_bx, h_by, max_btn_w, btn_h, 2.0 * ui_scale, highscore_border_col);
+                draw_pixel_text(
+                    highscore_text,
+                    cx - highscore_dim.width / 2.0,
+                    h_by + btn_h / 2.0 + highscore_dim.height / 2.0 - 2.0 * ui_scale,
+                    btn_font_size,
+                    highscore_text_col,
+                    &font,
+                );
+
+                // Button 3 (Level Select)
+                let level_bg_col = if state.menu_selected_idx == 2 || hover_level {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let level_border_col = if state.menu_selected_idx == 2 {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let level_text_col = if state.menu_selected_idx == 2 || hover_level {
                     WHITE
                 } else {
                     Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
@@ -847,6 +1010,49 @@ async fn main() {
             let cx = view_x + view_w / 2.0;
             let cy = view_y + view_h / 2.0;
 
+            // ==========================================
+            // TIMER COUNTDOWN DISPLAY (Top Right Panel)
+            // ==========================================
+            let timer_str = format!("{:.2} SEC", state.time_left);
+            let timer_font_size = 8.0 * ui_scale;
+            let timer_dim = measure_text(&timer_str, Some(&font), (timer_font_size * 1.3) as u16, 1.0);
+
+            let timer_w = (timer_dim.width + 16.0 * ui_scale).round();
+            let timer_h = (timer_dim.height + 12.0 * ui_scale).round();
+
+            let tx = (view_x + view_w - timer_w - 15.0 * ui_scale).round();
+            let ty = (view_y + 15.0 * ui_scale).round();
+
+            draw_rectangle(tx, ty, timer_w, timer_h, Color::from_rgba(10, 15, 25, 220));
+            
+            let is_low_time = state.time_left < 10.0;
+            let timer_border_col = if is_low_time {
+                if (get_time() * 4.0) as i32 % 2 == 0 {
+                    Color::from_rgba(255, 0, 127, 220) // Red-pink blink border
+                } else {
+                    Color::from_rgba(255, 230, 0, 220) // Yellow blink border
+                }
+            } else {
+                Color::from_rgba(0, 240, 255, 180) // Standard cyan border
+            };
+
+            let timer_text_col = if is_low_time {
+                Color::from_rgba(255, 0, 127, 255) // Red-pink text
+            } else {
+                Color::from_rgba(57, 255, 20, 255) // Neon green text
+            };
+
+            draw_pixel_rect_lines(tx, ty, timer_w, timer_h, 2.0 * ui_scale, timer_border_col);
+            draw_pixel_text(
+                &timer_str,
+                tx + 8.0 * ui_scale,
+                ty + timer_dim.height + 5.0 * ui_scale,
+                timer_font_size * 1.3,
+                timer_text_col,
+                &font,
+            );
+
+
             // Center holographic reticle
             let target_found = state.player.target_idx.is_some();
             let reticle_color = if target_found {
@@ -877,12 +1083,52 @@ async fn main() {
                 }
             );
 
+            // Countdown numbers directly above reticle for the last 10 seconds
+            if state.time_left <= 10.0 && state.time_left > 0.0 {
+                let countdown_str = format!("{}", state.time_left.ceil() as i32);
+                let countdown_font_size = 14.0 * ui_scale;
+                let countdown_dim = measure_text(&countdown_str, Some(&font), countdown_font_size as u16, 1.0);
+
+                let shake_intensity = (10.0 - state.time_left).max(0.0); // 0.0 to 10.0
+                // Maximum shake offset in pixels (scaling quadratically with more intensity at the very end)
+                let max_offset = 1.8 * ui_scale * (shake_intensity / 10.0).powi(2);
+                
+                let shake_offset_x = ((get_time() * 60.0).sin() as f32) * max_offset;
+                let shake_offset_y = ((get_time() * 75.0).cos() as f32) * max_offset;
+
+                let countdown_x = cx - countdown_dim.width / 2.0 + shake_offset_x;
+                let countdown_y = cy - ch_size / 2.0 - 8.0 * ui_scale + shake_offset_y;
+
+                // Draw background shadow
+                draw_pixel_text(
+                    &countdown_str,
+                    countdown_x + 1.5 * ui_scale,
+                    countdown_y + 1.5 * ui_scale,
+                    countdown_font_size,
+                    Color::from_rgba(0, 0, 0, 180),
+                    &font,
+                );
+                // Draw foreground neon red text
+                draw_pixel_text(
+                    &countdown_str,
+                    countdown_x,
+                    countdown_y,
+                    countdown_font_size,
+                    Color::from_rgba(255, 0, 0, 255), // Red
+                    &font,
+                );
+            }
+
             // Biometric Scanner Window (Top-Left)
             if target_found {
                 let target = &state.citizens[state.player.target_idx.unwrap()];
                 let is_criminal = target.is_leftsider;
                 let hud_theme = if is_criminal {
-                    Color::from_rgba(255, 0, 127, 220) // Red/pink theme
+                    if (get_time() * 4.0) as i32 % 2 == 0 {
+                        Color::from_rgba(255, 0, 127, 220) // Red/pink theme
+                    } else {
+                        Color::from_rgba(255, 230, 0, 220) // Yellow theme
+                    }
                 } else {
                     Color::from_rgba(57, 255, 20, 220)  // Green theme
                 };
@@ -1049,44 +1295,239 @@ async fn main() {
             // Weapon sprite rendering removed as requested
 
             // ==========================================
-            // GAME OVER / SIMULATION FAIL OVERLAY
+            // RUST-BASED GAME OVER & LEADERBOARD OVERLAYS
             // ==========================================
-            if is_game_over {
-                draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(20, 0, 5, 220));
-
-                let size1 = 12.0 * ui_scale;
-                let size2 = 8.0 * ui_scale;
-                let size3 = 9.0 * ui_scale;
-
-                let t1 = "REU-99 INTEGRITY CRITICAL // SIM TERMINATED";
-                let t2 = "REBEL UNIT DEPLOYED LETHAL FORCE";
-                let t3 = "PRESS 'R' TO REBOOT SYSTEM AND TRY AGAIN";
-
-                let dim1 = measure_text(t1, Some(&font), size1 as u16, 1.0);
-                let dim2 = measure_text(t2, Some(&font), size2 as u16, 1.0);
-                let dim3 = measure_text(t3, Some(&font), size3 as u16, 1.0);
-
-                draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
-                draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
-                draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
-            } else if is_bankrupt {
-                draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(20, 0, 5, 220));
-
-                let size1 = 11.0 * ui_scale;
-                let size2 = 7.0 * ui_scale;
-                let size3 = 9.0 * ui_scale;
-
-                let t1 = "BUDGET BALANCE LIMIT EXCEEDED // DECOMMISSIONED";
-                let t2 = "COLLATERAL DAMAGE LIABILITIES SURPASSED POLICE FUNDS";
-                let t3 = "PRESS 'R' TO REBOOT SYSTEM AND TRY AGAIN";
-
-                let dim1 = measure_text(t1, Some(&font), size1 as u16, 1.0);
-                let dim2 = measure_text(t2, Some(&font), size2 as u16, 1.0);
-                let dim3 = measure_text(t3, Some(&font), size3 as u16, 1.0);
-
-                draw_pixel_text(t1, view_x + (view_w - dim1.width) / 2.0, view_y + view_h * 0.4, size1, Color::from_rgba(255, 0, 127, 255), &font);
-                draw_pixel_text(t2, view_x + (view_w - dim2.width) / 2.0, view_y + view_h * 0.48, size2, WHITE, &font);
-                draw_pixel_text(t3, view_x + (view_w - dim3.width) / 2.0, view_y + view_h * 0.6, size3, Color::from_rgba(0, 240, 255, 255), &font);
+            if is_game_over || is_bankrupt || state.show_leaderboard {
+                if state.is_entering_highscore {
+                    // Render initials entry screen
+                    draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 230));
+                    
+                    let size_title = 12.0 * ui_scale;
+                    let size_sub = 8.0 * ui_scale;
+                    let size_score = 14.0 * ui_scale;
+                    let size_prompt = 9.0 * ui_scale;
+                    
+                    // Header text
+                    let t_header = if is_bankrupt {
+                        "BUDGET EXCEEDED - DECOMMISSIONED"
+                    } else if state.player.health <= 0.0 {
+                        "REU-99 INTEGRITY CRITICAL // SIM TERMINATED"
+                    } else {
+                        "PATROL COMPLETE"
+                    };
+                    
+                    let t_sub = if is_bankrupt {
+                        ""
+                    } else if state.player.health <= 0.0 {
+                        "REBEL UNIT DEPLOYED LETHAL FORCE"
+                    } else {
+                        ""
+                    };
+                    
+                    let dim_header = measure_text(t_header, Some(&font), size_title as u16, 1.0);
+                    
+                    // Draw headers
+                    let header_col = if is_bankrupt || state.player.health <= 0.0 {
+                        Color::from_rgba(255, 0, 127, 255) // neon pink
+                    } else {
+                        Color::from_rgba(0, 240, 255, 255) // neon cyan
+                    };
+                    
+                    // Calculate a vertical baseline that groups elements tightly in the center
+                    let mut current_y = view_y + view_h * 0.32;
+                    
+                    draw_pixel_text(t_header, view_x + (view_w - dim_header.width) / 2.0, current_y, size_title, header_col, &font);
+                    current_y += 26.0 * ui_scale;
+                    
+                    if !t_sub.is_empty() {
+                        let dim_sub = measure_text(t_sub, Some(&font), size_sub as u16, 1.0);
+                        draw_pixel_text(t_sub, view_x + (view_w - dim_sub.width) / 2.0, current_y, size_sub, WHITE, &font);
+                        current_y += 22.0 * ui_scale;
+                    }
+                    
+                    // Draw Score
+                    let score_str = format!("SCORE: {} CR", state.player.credits);
+                    let dim_score = measure_text(&score_str, Some(&font), size_score as u16, 1.0);
+                    draw_pixel_text(&score_str, view_x + (view_w - dim_score.width) / 2.0, current_y, size_score, Color::from_rgba(57, 255, 20, 255), &font);
+                    current_y += 36.0 * ui_scale;
+                    
+                    if state.highscore_input_delay <= 0.0 {
+                        if is_bankrupt {
+                            let t_confirm = "PRESS 'ENTER' TO CONTINUE";
+                            let size_confirm = 9.0 * ui_scale;
+                            let dim_confirm = measure_text(t_confirm, Some(&font), size_confirm as u16, 1.0);
+                            let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75;
+                            let confirm_col = Color::from_rgba(57, 255, 20, (255.0 * pulse) as u8);
+                            let confirm_y = current_y + 12.0 * ui_scale;
+                            draw_pixel_text(t_confirm, view_x + (view_w - dim_confirm.width) / 2.0, confirm_y, size_confirm, confirm_col, &font);
+                        } else {
+                            // Draw name entry prompt
+                            let t_prompt = "ENTER UNIT INITIALS (3 CHARACTERS)";
+                            let dim_prompt = measure_text(t_prompt, Some(&font), size_prompt as u16, 1.0);
+                            draw_pixel_text(t_prompt, view_x + (view_w - dim_prompt.width) / 2.0, current_y, size_prompt, Color::from_rgba(148, 163, 184, 255), &font);
+                            current_y += 18.0 * ui_scale;
+                            
+                            // Draw letters with boxes/lines
+                            let start_x = cx - 75.0 * ui_scale;
+                            let letter_w = 40.0 * ui_scale;
+                            let gap = 15.0 * ui_scale;
+                            let box_y = current_y;
+                            let box_h = 45.0 * ui_scale;
+                            
+                            for i in 0..3 {
+                                let bx = start_x + i as f32 * (letter_w + gap);
+                                // Draw box outline
+                                let box_color = if state.highscore_name.len() == i {
+                                    Color::from_rgba(0, 240, 255, 255) // Active box is Cyan
+                                } else {
+                                    Color::from_rgba(0, 240, 255, 80) // Inactive box is dim Cyan
+                                };
+                                draw_pixel_rect_lines(bx, box_y, letter_w, box_h, 2.0 * ui_scale, box_color);
+                                
+                                // Draw character
+                                if i < state.highscore_name.len() {
+                                    let char_str = state.highscore_name.chars().nth(i).unwrap().to_string();
+                                    let char_size = 20.0 * ui_scale;
+                                    let char_dim = measure_text(&char_str, Some(&font), char_size as u16, 1.0);
+                                    draw_pixel_text(
+                                        &char_str,
+                                        bx + (letter_w - char_dim.width) / 2.0,
+                                        box_y + box_h / 2.0 + char_dim.height / 2.0 - 2.0,
+                                        char_size,
+                                        WHITE,
+                                        &font,
+                                    );
+                                } else if state.highscore_name.len() == i {
+                                    // Blinking cursor in active box
+                                    if (get_time() * 4.0) as i32 % 2 == 0 {
+                                        let cursor_str = "_";
+                                        let char_size = 20.0 * ui_scale;
+                                        let char_dim = measure_text(cursor_str, Some(&font), char_size as u16, 1.0);
+                                        draw_pixel_text(
+                                            cursor_str,
+                                            bx + (letter_w - char_dim.width) / 2.0,
+                                            box_y + box_h / 2.0 + char_dim.height / 2.0 - 2.0,
+                                            char_size,
+                                            Color::from_rgba(0, 240, 255, 255),
+                                            &font,
+                                        );
+                                    }
+                                }
+                            }
+                            
+                            // Draw confirmation hint if name is filled
+                            if state.highscore_name.len() == 3 {
+                                let t_confirm = "PRESS 'ENTER' TO TRANSMIT DATA";
+                                let size_confirm = 9.0 * ui_scale;
+                                let dim_confirm = measure_text(t_confirm, Some(&font), size_confirm as u16, 1.0);
+                                let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking (matching reboot prompt)
+                                let confirm_col = Color::from_rgba(57, 255, 20, (255.0 * pulse) as u8);
+                                let confirm_y = box_y + box_h + 20.0 * ui_scale;
+                                draw_pixel_text(t_confirm, view_x + (view_w - dim_confirm.width) / 2.0, confirm_y, size_confirm, confirm_col, &font);
+                            }
+                        }
+                    }
+                } else if state.show_leaderboard {
+                    // Render Top 10 rankings table
+                    draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 240));
+                    
+                    let size_headers = 8.0 * ui_scale;
+                    let size_row = 8.0 * ui_scale;
+                    let size_msg = 9.0 * ui_scale;
+                    let size_reboot = 9.0 * ui_scale;
+                    
+                    // Table configuration
+                    let table_x = cx - 180.0 * ui_scale;
+                    let table_y = view_y + view_h * 0.08;
+                    let table_w = 360.0 * ui_scale;
+                    let row_h = 14.5 * ui_scale;
+                    
+                    // Draw table headers
+                    let th_rank = "RANK";
+                    let th_agent = "UNIT";
+                    let th_score = "SCORE";
+                    
+                    let dim_th_agent = measure_text(th_agent, Some(&font), size_headers as u16, 1.0);
+                    let dim_th_score = measure_text(th_score, Some(&font), size_headers as u16, 1.0);
+                    
+                    let header_col = Color::from_rgba(0, 240, 255, 255);
+                    draw_pixel_text(th_rank, table_x + 10.0 * ui_scale, table_y + row_h - 4.0 * ui_scale, size_headers, header_col, &font);
+                    draw_pixel_text(th_agent, cx - dim_th_agent.width / 2.0, table_y + row_h - 4.0 * ui_scale, size_headers, header_col, &font);
+                    draw_pixel_text(th_score, table_x + table_w - dim_th_score.width - 10.0 * ui_scale, table_y + row_h - 4.0 * ui_scale, size_headers, header_col, &font);
+                    
+                    // Draw header underline
+                    draw_rectangle(table_x, table_y + row_h, table_w, 2.0 * ui_scale, Color::from_rgba(0, 240, 255, 120));
+                    
+                    // Draw rows
+                    for idx in 0..10 {
+                        let ry = table_y + row_h * 1.2 + idx as f32 * row_h;
+                        
+                        let is_new = state.new_rank == Some(idx);
+                        let row_color = if is_new {
+                            let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75;
+                            Color::new(1.0, 0.92, 0.23, pulse as f32) // Yellow blinking (3x faster)
+                        } else {
+                            Color::from_rgba(180, 200, 220, 255) // Slate blue
+                        };
+                        
+                        // Rank column
+                        let rank_str = format!("#{}", idx + 1);
+                        draw_pixel_text(&rank_str, table_x + 10.0 * ui_scale, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                        
+                        // Get name & score
+                        if idx < state.leaderboard_data.len() {
+                            let (name, score) = &state.leaderboard_data[idx];
+                            
+                            // Name column
+                            let dim_name = measure_text(name, Some(&font), size_row as u16, 1.0);
+                            draw_pixel_text(name, cx - dim_name.width / 2.0, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                            
+                            // Score column
+                            let score_str = format!("{} CR", score);
+                            let dim_score = measure_text(&score_str, Some(&font), size_row as u16, 1.0);
+                            draw_pixel_text(&score_str, table_x + table_w - dim_score.width - 10.0 * ui_scale, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                        } else {
+                            // Empty row filler
+                            let name = "---";
+                            let dim_name = measure_text(name, Some(&font), size_row as u16, 1.0);
+                            draw_pixel_text(name, cx - dim_name.width / 2.0, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                            
+                            let score_str = "--- CR";
+                            let dim_score = measure_text(score_str, Some(&font), size_row as u16, 1.0);
+                            draw_pixel_text(score_str, table_x + table_w - dim_score.width - 10.0 * ui_scale, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                        }
+                        
+                        // Thin separator line
+                        draw_rectangle(table_x, ry + row_h, table_w, 1.0 * ui_scale, Color::from_rgba(255, 255, 255, 12));
+                    }
+                    
+                    // Message below table
+                    let (t_msg, msg_col) = if is_game_over || is_bankrupt {
+                        if let Some(rank) = state.new_rank {
+                            let hue = ((get_time() * 360.0) % 360.0) as f32; // Fast rainbow cycling hue
+                            let pulse = (get_time() * 9.0).sin() * 0.4 + 0.6; // Blinking neon pulse
+                            let mut color = hsl_to_rgb(hue, 1.0, 0.5); // Bright neon color
+                            color.a = pulse as f32;
+                            (format!("CONGRATULATIONS UNIT! YOU RANKED #{}!", rank + 1), color)
+                        } else {
+                            ("RANKING INSUFFICIENT. APPLICANT REJECTED.".to_string(), Color::from_rgba(255, 0, 127, 255))
+                        }
+                    } else {
+                        ("UNIT LEADERBOARD RECORDINGS".to_string(), Color::from_rgba(0, 240, 255, 255))
+                    };
+                    
+                    let dim_msg = measure_text(&t_msg, Some(&font), size_msg as u16, 1.0);
+                    let msg_y = table_y + row_h * 11.5 + 15.0 * ui_scale;
+                    draw_pixel_text(&t_msg, view_x + (view_w - dim_msg.width) / 2.0, msg_y, size_msg, msg_col, &font);
+                    
+                    // Reboot prompt
+                    let t_reboot = "PRESS 'ENTER' TO CONTINUE";
+                    let dim_reboot = measure_text(t_reboot, Some(&font), size_reboot as u16, 1.0);
+                    let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking
+                    let reboot_col = Color::from_rgba(0, 240, 255, (255.0 * pulse) as u8);
+                    let reboot_y = msg_y + 18.0 * ui_scale;
+                    draw_pixel_text(t_reboot, view_x + (view_w - dim_reboot.width) / 2.0, reboot_y, size_reboot, reboot_col, &font);
+                }
             }
         }
         

@@ -4,6 +4,9 @@ use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
 unsafe extern "C" {
     fn play_sfx(ptr: *const u8, len: usize);
     fn set_menu_active(active: bool);
+    fn load_scores_js(ptr: *mut u8, max_len: usize) -> usize;
+    fn save_scores_js(ptr: *const u8, len: usize);
+    fn is_game_started_js() -> bool;
 }
 
 pub fn play_sound(name: &str) {
@@ -27,6 +30,19 @@ pub fn update_menu_active_js(active: bool) {
         println!("[menu_active] {}", active);
     }
 }
+
+pub fn is_game_started() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        is_game_started_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        true
+    }
+}
+
+
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum CitizenState {
@@ -336,6 +352,14 @@ pub struct GameState {
     pub menu_selected_idx: usize,
     pub menu_particles: Vec<MenuParticle>,
     pub menu_title_landed: bool,
+    pub time_left: f32,
+    pub is_entering_highscore: bool,
+    pub highscore_name: String,
+    pub highscore_input_delay: f32,
+    pub last_beep_second: i32,
+    pub show_leaderboard: bool,
+    pub leaderboard_data: Vec<(String, i32)>,
+    pub new_rank: Option<usize>,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -390,10 +414,18 @@ impl GameState {
             focus_target_idx: None,
             focus_text_timer: 0.0,
             is_in_menu: true,
-            menu_timer: -3.5, // negative to offset for HTML preloader (~3.2s)
+            menu_timer: 0.0,
             menu_selected_idx: 0,
             menu_particles: Vec::new(),
             menu_title_landed: false,
+            time_left: 30.0,
+            is_entering_highscore: false,
+            highscore_name: String::new(),
+            highscore_input_delay: 0.0,
+            last_beep_second: 11,
+            show_leaderboard: false,
+            leaderboard_data: Vec::new(),
+            new_rank: None,
             rng_state: 123456789,
         };
 
@@ -514,7 +546,9 @@ impl GameState {
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
         if self.is_in_menu {
-            self.menu_timer += dt;
+            if crate::game::is_game_started() {
+                self.menu_timer += dt;
+            }
         }
 
         // Focus scan window typing animation update
@@ -959,7 +993,7 @@ impl GameState {
             }
 
             // Execute combat/timer behaviors
-            let mut shoot_event = None;
+            let shoot_event: Option<(f32, f32)> = None;
             let mut explode_done = false;
 
             {
@@ -1215,5 +1249,57 @@ impl GameState {
         if switch_right {
             self.player.is_leftsider = false;
         }
+    }
+
+    pub fn save_highscore_rust(&self, name: &str, score: i32) {
+        let mut scores = self.load_leaderboard_rust();
+        scores.push((name.to_string(), score));
+        scores.sort_by(|a, b| b.1.cmp(&a.1));
+        scores.truncate(10);
+        
+        let mut serialized = String::new();
+        for (i, (n, s)) in scores.iter().enumerate() {
+            if i > 0 {
+                serialized.push(',');
+            }
+            serialized.push_str(&format!("{}:{}", n, s));
+        }
+        
+        #[cfg(target_arch = "wasm32")]
+        unsafe {
+            save_scores_js(serialized.as_ptr(), serialized.len());
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            println!("[save_highscore] {}", serialized);
+        }
+    }
+
+    pub fn load_leaderboard_rust(&self) -> Vec<(String, i32)> {
+        let mut buffer = vec![0u8; 1024];
+        #[cfg(target_arch = "wasm32")]
+        let len = unsafe {
+            load_scores_js(buffer.as_mut_ptr(), buffer.len())
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let len = {
+            let mock = "APX:2500,LAW:2000,KXX:1500,PRM:1000,SEC:800,COP:600,DED:500,BAD:400,OUT:300,AAA:100";
+            buffer[..mock.len()].copy_from_slice(mock.as_bytes());
+            mock.len()
+        };
+        
+        let serialized = String::from_utf8_lossy(&buffer[..len]);
+        let mut scores = Vec::new();
+        if !serialized.is_empty() {
+            for entry in serialized.split(',') {
+                let parts: Vec<&str> = entry.split(':').collect();
+                if parts.len() == 2 {
+                    if let Ok(score) = parts[1].parse::<i32>() {
+                        scores.push((parts[0].to_string(), score));
+                    }
+                }
+            }
+        }
+        scores
     }
 }
