@@ -277,7 +277,7 @@ async fn main() {
         let mut switch_lane_right = false;
 
         if state.show_leaderboard {
-            if is_key_pressed(KeyCode::Enter) {
+            if is_key_pressed(KeyCode::R) {
                 if is_game_over || is_bankrupt {
                     state = GameState::new();
                     is_game_over = false;
@@ -400,11 +400,12 @@ async fn main() {
                     game::play_sound("time_over");
                 }
 
-                // Countdown beeps for the last 10 seconds
+                // Countdown beeps for the last 10 seconds (pitched by remaining seconds)
                 let current_sec = state.time_left.ceil() as i32;
                 if current_sec <= 10 && current_sec > 0 && current_sec < state.last_beep_second {
                     state.last_beep_second = current_sec;
-                    game::play_sound("countdown_beep");
+                    let beep_name = format!("countdown_beep_{}", current_sec);
+                    game::play_sound(&beep_name);
                 }
             }
 
@@ -438,8 +439,8 @@ async fn main() {
                     while let Some(_) = get_char_pressed() {}
                 } else {
                     if is_bankrupt {
-                        // Decommissioned case: Skip name input, press Enter to continue
-                        if is_key_pressed(KeyCode::Enter) {
+                        // Skip name input, press R to continue
+                        if is_key_pressed(KeyCode::R) {
                             state.leaderboard_data = state.load_leaderboard_rust();
                             state.new_rank = None;
                             state.is_entering_highscore = false;
@@ -457,7 +458,7 @@ async fn main() {
                             state.highscore_name.pop();
                             game::play_sound("laser");
                         }
-                        if is_key_pressed(KeyCode::Enter) && state.highscore_name.len() == 3 {
+                        if is_key_pressed(KeyCode::R) && state.highscore_name.len() == 3 {
                             state.save_highscore_rust(&state.highscore_name, state.player.credits);
                             state.leaderboard_data = state.load_leaderboard_rust();
                             state.new_rank = None;
@@ -1099,6 +1100,17 @@ async fn main() {
                 let countdown_x = cx - countdown_dim.width / 2.0 + shake_offset_x;
                 let countdown_y = cy - ch_size / 2.0 - 8.0 * ui_scale + shake_offset_y;
 
+                // For the last 3 seconds: flash between red and yellow at ~4Hz
+                let fg_color = if state.time_left <= 3.0 {
+                    if (get_time() * 8.0) as i32 % 2 == 0 {
+                        Color::from_rgba(255, 0, 0, 255)   // Red
+                    } else {
+                        Color::from_rgba(255, 220, 0, 255) // Yellow
+                    }
+                } else {
+                    Color::from_rgba(255, 0, 0, 255) // Always red for 4-10s
+                };
+
                 // Draw background shadow
                 draw_pixel_text(
                     &countdown_str,
@@ -1108,13 +1120,13 @@ async fn main() {
                     Color::from_rgba(0, 0, 0, 180),
                     &font,
                 );
-                // Draw foreground neon red text
+                // Draw foreground text with flash colour
                 draw_pixel_text(
                     &countdown_str,
                     countdown_x,
                     countdown_y,
                     countdown_font_size,
-                    Color::from_rgba(255, 0, 0, 255), // Red
+                    fg_color,
                     &font,
                 );
             }
@@ -1353,7 +1365,7 @@ async fn main() {
                     
                     if state.highscore_input_delay <= 0.0 {
                         if is_bankrupt {
-                            let t_confirm = "PRESS 'ENTER' TO CONTINUE";
+                            let t_confirm = "PRESS 'R' TO CONTINUE";
                             let size_confirm = 9.0 * ui_scale;
                             let dim_confirm = measure_text(t_confirm, Some(&font), size_confirm as u16, 1.0);
                             let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75;
@@ -1417,7 +1429,7 @@ async fn main() {
                             
                             // Draw confirmation hint if name is filled
                             if state.highscore_name.len() == 3 {
-                                let t_confirm = "PRESS 'ENTER' TO TRANSMIT DATA";
+                                let t_confirm = "PRESS 'R' TO TRANSMIT DATA";
                                 let size_confirm = 9.0 * ui_scale;
                                 let dim_confirm = measure_text(t_confirm, Some(&font), size_confirm as u16, 1.0);
                                 let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking (matching reboot prompt)
@@ -1521,7 +1533,7 @@ async fn main() {
                     draw_pixel_text(&t_msg, view_x + (view_w - dim_msg.width) / 2.0, msg_y, size_msg, msg_col, &font);
                     
                     // Reboot prompt
-                    let t_reboot = "PRESS 'ENTER' TO CONTINUE";
+                    let t_reboot = "PRESS 'R' TO CONTINUE";
                     let dim_reboot = measure_text(t_reboot, Some(&font), size_reboot as u16, 1.0);
                     let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking
                     let reboot_col = Color::from_rgba(0, 240, 255, (255.0 * pulse) as u8);
