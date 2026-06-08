@@ -1369,67 +1369,45 @@ async fn main() {
             draw_pixel_text(&val_str, px + 8.0 * ui_scale, py + val_dim.height + 5.0 * ui_scale, font_value_size * 1.3, credits_col, &font);
 
             // ==========================================
-            // MISSILE SPECIAL ATTACK HUD ICON (above Credits panel)
+            // MISSILE SPECIAL ATTACK HUD TEXT (above Credits panel)
             // ==========================================
             if !state.is_in_menu {
-                let icon_size = panel_h; // same height as credits box → square
-                let icon_gap = 5.0 * ui_scale;
-                let ix = px;                          // same left edge as credits
-                let iy = py - icon_size - icon_gap;   // directly above
+                let rocket_str = "[R]OCKET";
+                let rocket_font_size = font_value_size * 1.1;
+                let rx = px + 4.0 * ui_scale;
+                let ry = py - 6.0 * ui_scale;
 
-                let is_ready = state.missile_cooldown <= 0.0;
-                let cooldown_frac = (state.missile_cooldown / 5.0).clamp(0.0, 1.0); // 1.0 = full CD
-
-                // Background
-                draw_rectangle(ix, iy, icon_size, icon_size, Color::from_rgba(10, 15, 25, 220));
-
-                // Missile symbol (two diagonal lines + a dot) – pixel-art style
-                let mc = ix + icon_size / 2.0;
-                let my = iy + icon_size / 2.0;
-                let sym_r = icon_size * 0.28;
-                // Body line
-                draw_line(mc - sym_r, my + sym_r * 0.6, mc + sym_r, my - sym_r * 0.6, 2.0 * ui_scale,
-                    Color::from_rgba(255, 180, 60, 200));
-                // Fin lines
-                draw_line(mc - sym_r, my + sym_r * 0.6, mc - sym_r * 0.5, my + sym_r,
-                    2.0 * ui_scale, Color::from_rgba(255, 180, 60, 200));
-                draw_line(mc - sym_r, my + sym_r * 0.6, mc - sym_r * 1.1, my + sym_r * 0.2,
-                    2.0 * ui_scale, Color::from_rgba(255, 180, 60, 200));
-                // Warhead dot
-                draw_circle(mc + sym_r, my - sym_r * 0.6, 2.5 * ui_scale,
-                    Color::from_rgba(255, 220, 80, 255));
-
-                // Cooldown overlay: dark rect shrinking from top (full CD = fully covered)
-                if cooldown_frac > 0.001 {
-                    let overlay_h = icon_size * cooldown_frac;
-                    draw_rectangle(ix, iy, icon_size, overlay_h, Color::from_rgba(0, 0, 0, 170));
-                }
-
-                // Border: bright orange-yellow when ready, dim grey on cooldown
-                let border_col = if is_ready {
-                    // Pulsing glow when ready
-                    let pulse = ((get_time() * 5.0).sin() as f32 * 0.3 + 0.7).max(0.0);
-                    Color::from_rgba(255, 180, 30, (200.0 * pulse) as u8)
+                let color = if state.missile_used {
+                    Color::new(0.5, 0.5, 0.5, 0.5) // gray and half transparent
                 } else {
-                    Color::from_rgba(80, 80, 90, 160)
+                    // flashing yellow red
+                    let mix = ((get_time() * 8.0).sin() as f32 * 0.5 + 0.5).clamp(0.0, 1.0);
+                    let yellow = Color::new(1.0, 0.9, 0.0, 1.0);
+                    let red = Color::new(1.0, 0.0, 0.5, 1.0);
+                    Color::new(
+                        yellow.r + (red.r - yellow.r) * mix,
+                        yellow.g + (red.g - yellow.g) * mix,
+                        yellow.b + (red.b - yellow.b) * mix,
+                        1.0,
+                    )
                 };
-                draw_pixel_rect_lines(ix, iy, icon_size, icon_size, 2.0 * ui_scale, border_col);
 
-                // "[R]" key label below icon
-                let key_font_size = 5.0 * ui_scale;
-                let key_label = if is_ready { "[R] READY" } else { "[R]" };
-                let key_dim = measure_text(key_label, Some(&font), key_font_size as u16, 1.0);
-                let key_col = if is_ready {
-                    Color::from_rgba(255, 180, 30, 200)
-                } else {
-                    Color::from_rgba(100, 100, 110, 180)
-                };
+                // Draw background shadow
                 draw_pixel_text(
-                    key_label,
-                    ix + (icon_size - key_dim.width) / 2.0,
-                    iy + icon_size + 4.0 * ui_scale + key_dim.height,
-                    key_font_size,
-                    key_col,
+                    rocket_str,
+                    rx + 1.0 * ui_scale,
+                    ry + 1.0 * ui_scale,
+                    rocket_font_size,
+                    Color::new(0.0, 0.0, 0.0, if state.missile_used { 0.2 } else { 0.6 }),
+                    &font,
+                );
+                // Draw rocket label
+                draw_pixel_text(
+                    rocket_str,
+                    rx,
+                    ry,
+                    rocket_font_size,
+                    color,
                     &font,
                 );
             }

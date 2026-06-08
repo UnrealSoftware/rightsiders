@@ -393,7 +393,7 @@ pub struct GameState {
     pub new_rank: Option<usize>,
     // Guided missile special attack
     pub missiles: Vec<GuidedMissile>,
-    pub missile_cooldown: f32, // 0.0 = ready, counts down from 5.0
+    pub missile_used: bool,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -463,7 +463,7 @@ impl GameState {
             leaderboard_data: Vec::new(),
             new_rank: None,
             missiles: Vec::new(),
-            missile_cooldown: 0.0,
+            missile_used: false,
             rng_state: 123456789,
         };
 
@@ -537,11 +537,11 @@ impl GameState {
         let num_sprinkles = 15;
         for _ in 0..num_sprinkles {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.8 + rng_float(&mut self.rng_state) * 1.5;
+            let speed_h = 0.4 + rng_float(&mut self.rng_state) * 0.8; // Reduced horizontal spread
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
-            let vz = 1.0 + rng_float(&mut self.rng_state) * 2.0;
-            let z = 0.1 + rng_float(&mut self.rng_state) * 0.4;
+            let vz = 0.8 + rng_float(&mut self.rng_state) * 1.5;     // Lower vertical bounce
+            let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Spawn closer to chest level
             
             self.particles.push(Particle {
                 x,
@@ -561,11 +561,11 @@ impl GameState {
         let num_chunks = 6;
         for _ in 0..num_chunks {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.4 + rng_float(&mut self.rng_state) * 1.0;
+            let speed_h = 0.2 + rng_float(&mut self.rng_state) * 0.6; // Reduced horizontal spread
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
-            let vz = 1.5 + rng_float(&mut self.rng_state) * 2.5;
-            let z = 0.1 + rng_float(&mut self.rng_state) * 0.4;
+            let vz = 1.0 + rng_float(&mut self.rng_state) * 1.8;     // Lower vertical bounce
+            let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Spawn closer to chest level
             
             self.particles.push(Particle {
                 x,
@@ -582,30 +582,10 @@ impl GameState {
         }
     }
 
-    /// Spawn a reduced blood explosion (fewer particles, for missile hits)
-    pub fn spawn_blood_explosion_reduced(&mut self, x: f32, y: f32) {
-        // Only sprinkles, no gore chunks – keeps performance stable during multi-kill salvos
-        let num_sprinkles = 6;
-        for _ in 0..num_sprinkles {
-            let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.6 + rng_float(&mut self.rng_state) * 1.2;
-            let vx = theta.cos() * speed_h;
-            let vy = theta.sin() * speed_h;
-            let vz = 0.8 + rng_float(&mut self.rng_state) * 1.5;
-            let z = 0.1 + rng_float(&mut self.rng_state) * 0.3;
-            self.particles.push(Particle {
-                x, y, z, vx, vy, vz,
-                p_type: ParticleType::BloodSprinkle,
-                bounces: 1,
-                lifetime: 0.4 + rng_float(&mut self.rng_state) * 0.4,
-                first_impact: true,
-            });
-        }
-    }
 
     /// Launch guided missiles at all visible leftsiders
     pub fn trigger_missile_salvo(&mut self) {
-        if self.missile_cooldown > 0.0 || self.player.health <= 0.0 {
+        if self.missile_used || self.player.health <= 0.0 {
             return;
         }
 
@@ -681,7 +661,7 @@ impl GameState {
             });
         }
 
-        self.missile_cooldown = 5.0;
+        self.missile_used = true;
         play_sound("missile_launch");
     }
 
@@ -835,6 +815,10 @@ impl GameState {
 
             p.vz -= gravity * dt;
 
+            // Apply horizontal air resistance to blood/meat particles
+            p.vx *= (1.0 - 5.0 * dt).max(0.0);
+            p.vy *= (1.0 - 5.0 * dt).max(0.0);
+
             // Physics step
             let prev_x = p.x;
             let prev_y = p.y;
@@ -944,11 +928,6 @@ impl GameState {
             }
         }
 
-        // Tick missile cooldown
-        if self.missile_cooldown > 0.0 {
-            self.missile_cooldown = (self.missile_cooldown - dt).max(0.0);
-        }
-
         // Update guided missiles
         {
             let _px = self.player.x;
@@ -959,15 +938,18 @@ impl GameState {
             // Collect indices to remove and kill events
             let mut to_remove: Vec<usize> = Vec::new();
             let mut kills: Vec<(usize, f32, f32)> = Vec::new(); // (citizen_idx, x, y)
-            let mut blood_spawned: usize = 0;
 
             for (mi, missile) in self.missiles.iter_mut().enumerate() {
+                // Live target homing: update target coordinates in case the citizen moved
+                if let Some(c) = self.citizens.iter().find(|c| c.id_num == missile.target_id) {
+                    missile.target_x = c.x;
+                    missile.target_y = c.y;
+                }
+
                 missile.flight_time += dt;
 
                 // Phase 2: apply homing steering after steer_delay
                 if missile.flight_time >= missile.steer_delay {
-                    // Update target position snapshot in case citizen moved
-                    // (we stored it at launch; for simplicity we use the snapshot)
                     let mut tdx = missile.target_x - missile.x;
                     if tdx > map_w / 2.0 { tdx -= map_w; }
                     else if tdx < -(map_w / 2.0) { tdx += map_w; }
@@ -1018,8 +1000,25 @@ impl GameState {
                     first_impact: false,
                 });
 
-                // Check arrival
-                if missile.flight_time >= missile.total_flight {
+                // Check arrival (either time-based or close proximity to live target)
+                let mut arrived = missile.flight_time >= missile.total_flight;
+                if !arrived {
+                    if let Some(c) = self.citizens.iter().find(|c| c.id_num == missile.target_id) {
+                        let mut dx = c.x - missile.x;
+                        if dx > map_w / 2.0 { dx -= map_w; }
+                        else if dx < -(map_w / 2.0) { dx += map_w; }
+                        let mut dy = c.y - missile.y;
+                        if dy > map_h / 2.0 { dy -= map_h; }
+                        else if dy < -(map_h / 2.0) { dy += map_h; }
+                        
+                        let dist_sq = dx * dx + dy * dy + (missile.z - 0.4) * (missile.z - 0.4);
+                        if dist_sq < 0.25 { // Proximity threshold: 0.5 units in 3D space
+                            arrived = true;
+                        }
+                    }
+                }
+
+                if arrived {
                     to_remove.push(mi);
                     // Schedule kill
                     if let Some(cidx) = self.citizens.iter().position(|c| c.id_num == missile.target_id) {
@@ -1068,11 +1067,7 @@ impl GameState {
                     1.2,
                 ));
 
-                // Throttle blood: max 3 full explosions per salvo
-                if blood_spawned < 3 {
-                    self.spawn_blood_explosion_reduced(kx, ky);
-                    blood_spawned += 1;
-                }
+                self.spawn_blood_explosion(kx, ky);
             }
 
             // Drop missiles targeting despawned/dead citizens (safe borrow split)
