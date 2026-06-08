@@ -427,19 +427,30 @@ impl Raycaster {
             // Screen X projection
             let sprite_screen_x = ((WIDTH as f32 / 2.0) * (1.0 + transform_x / transform_y)) as i32;
 
-            // Height/width scaling (citizens are 0.6x wall height, standing on floor)
+            // Height/width scaling based on sprite type
             let pos_z = 0.4_f32; // Camera height
             let full_height = (HEIGHT as f32 / transform_y).abs() as i32;
-            let sprite_height = (full_height as f32 * 0.6) as i32;
-            let sprite_width = (full_height as f32 * 0.6) as i32;
+            let scale = match sprite.texture_idx {
+                11 => 0.15, // Blood sprinkle
+                12 => 0.25, // Meat chunk
+                13 => 0.22, // Guided missile glowing sphere
+                14 | 15 | 16 => 0.35, // Smoke trail particles
+                _ => 0.60,  // Citizens
+            };
+            let sprite_height = (full_height as f32 * scale) as i32;
+            let sprite_width = (full_height as f32 * scale) as i32;
 
-            let draw_end_y_unclamped = HEIGHT as i32 / 2 + (((pos_z - sprite.z) * full_height as f32) as i32);
-            let draw_start_y_unclamped = draw_end_y_unclamped - sprite_height;
+            if sprite_width <= 0 || sprite_height <= 0 {
+                continue;
+            }
+
+            let draw_end_y_unclamped = (HEIGHT as i32 / 2).saturating_add(((pos_z - sprite.z) * full_height as f32) as i32);
+            let draw_start_y_unclamped = draw_end_y_unclamped.saturating_sub(sprite_height);
             let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
             let draw_end_y = draw_end_y_unclamped.clamp(0, HEIGHT as i32 - 1);
 
-            let draw_start_x = (-sprite_width / 2 + sprite_screen_x).clamp(0, WIDTH as i32 - 1);
-            let draw_end_x = (sprite_width / 2 + sprite_screen_x).clamp(0, WIDTH as i32 - 1);
+            let draw_start_x = (-sprite_width / 2).saturating_add(sprite_screen_x).clamp(0, WIDTH as i32 - 1);
+            let draw_end_x = (sprite_width / 2).saturating_add(sprite_screen_x).clamp(0, WIDTH as i32 - 1);
 
             let texture = &assets.sprites[sprite.texture_idx];
             let fog = (1.0 - (transform_y / VISIBILITY_DIST)).clamp(0.0, 1.0);

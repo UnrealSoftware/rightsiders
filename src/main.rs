@@ -222,6 +222,8 @@ async fn main() {
     let mut is_game_over = false;
     let mut is_bankrupt = false;
 
+
+
     loop {
         // Frame delta time (capped to prevent physics explosions on lag)
         let dt = get_frame_time().min(0.08);
@@ -288,6 +290,7 @@ async fn main() {
                     state.show_leaderboard = false;
                     state.is_in_menu = true;
                     state.menu_timer = 0.0;
+                    state.slogan_chars_played = 0;
                     state.menu_title_landed = false;
                     state.menu_star_played = false;
                     state.menu_particles.clear();
@@ -370,18 +373,33 @@ async fn main() {
                     switch_lane_right = true;
                 }
 
-                // W / S to adjust speed (x2 or 0.5x)
-                if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
-                    state.player.speed = 6.0; // x2 speed
-                } else if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
-                    state.player.speed = 1.5; // 0.5x speed
+                // Calculate speed multiplier based on elapsed time (start at 0, scale to 1 in 1s, then linearly to 2.5x by 30s)
+                let elapsed = (30.0 - state.time_left).max(0.0);
+                let multiplier = if elapsed < 1.0 {
+                    elapsed
                 } else {
-                    state.player.speed = 3.0; // normal speed
-                }
+                    1.0 + (elapsed - 1.0) / 29.0 * 1.5
+                };
+
+                // W / S to adjust speed (x2 or 0.5x)
+                let base_speed = if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
+                    6.0
+                } else if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
+                    1.5
+                } else {
+                    3.0
+                };
+
+                state.player.speed = base_speed * multiplier;
 
                 // Shooting: Spacebar only
                 if is_key_pressed(KeyCode::Space) {
                     state.trigger_fire();
+                }
+
+                // Guided missile salvo: R key
+                if is_key_pressed(KeyCode::R) {
+                    state.trigger_missile_salvo();
                 }
             }
         }
@@ -399,12 +417,11 @@ async fn main() {
                 if state.time_left <= 0.0 {
                     state.time_left = 0.0;
                     is_game_over = true;
-                    game::play_sound("time_over");
                 }
 
-                // Countdown beeps for the last 10 seconds (pitched by remaining seconds)
+                // Countdown beeps for the last 5 seconds (pitched by remaining seconds)
                 let current_sec = state.time_left.ceil() as i32;
-                if current_sec <= 10 && current_sec > 0 && current_sec < state.last_beep_second {
+                if current_sec <= 5 && current_sec > 0 && current_sec < state.last_beep_second {
                     state.last_beep_second = current_sec;
                     let beep_name = format!("countdown_beep_{}", current_sec);
                     game::play_sound(&beep_name);
@@ -425,10 +442,8 @@ async fn main() {
                 state.highscore_name = String::new();
                 state.highscore_input_delay = 0.5; // Block input for 0.5 seconds
                 
-                // Play end game sound on bankruptcy/health critical transitions
-                if is_bankrupt || state.player.health <= 0.0 {
-                    game::play_sound("time_over");
-                }
+                game::play_sound("time_over");
+                game::set_entering_highscore(true);
 
                 // Drain any buffered characters pressed during gameplay
                 while let Some(_) = get_char_pressed() {}
@@ -447,7 +462,8 @@ async fn main() {
                             state.new_rank = None;
                             state.is_entering_highscore = false;
                             state.show_leaderboard = true;
-                            game::play_sound("explosion");
+                            game::set_entering_highscore(false);
+                            game::play_sound("rank_fail");
                         }
                     } else {
                         while let Some(c) = get_char_pressed() {
@@ -472,7 +488,12 @@ async fn main() {
                             }
                             state.is_entering_highscore = false;
                             state.show_leaderboard = true;
-                            game::play_sound("explosion");
+                            game::set_entering_highscore(false);
+                            if state.new_rank.is_some() {
+                                game::play_sound("rank_top10");
+                            } else {
+                                game::play_sound("rank_fail");
+                            }
                         }
                     }
                 }
@@ -587,6 +608,15 @@ async fn main() {
             let tex_idx = match p.p_type {
                 crate::game::ParticleType::BloodSprinkle => 11,
                 crate::game::ParticleType::GoreDebris => 12,
+                crate::game::ParticleType::Smoke => {
+                    if p.lifetime > 0.6 {
+                        14 // Hot yellow/white fire
+                    } else if p.lifetime > 0.3 {
+                        15 // Orange/pink spark
+                    } else {
+                        16 // Dark grey smoke
+                    }
+                }
             };
             
             sprites_to_draw.push(SpriteToRender {
@@ -594,6 +624,18 @@ async fn main() {
                 y: p.y,
                 z: p.z,
                 texture_idx: tex_idx,
+                is_targeted: false,
+                target_color: 0,
+            });
+        }
+
+        // Push guided missiles to sprite list for 3D rendering
+        for missile in &state.missiles {
+            sprites_to_draw.push(SpriteToRender {
+                x: missile.x,
+                y: missile.y,
+                z: missile.z,
+                texture_idx: 13, // s13 Guided Missile sprite
                 is_targeted: false,
                 target_color: 0,
             });
@@ -668,6 +710,8 @@ async fn main() {
             }
         }
 
+
+
         // Damage flash visual indicator
         if state.player.damage_flash > 0.0 {
             let opacity = (state.player.damage_flash * 4.0).min(0.65);
@@ -694,6 +738,8 @@ async fn main() {
                 ..Default::default()
             }
         );
+
+
 
         // 3. Render 3D Floating texts on top of the upscaled screen at native high-resolution
         for txt in &state.floating_texts {
@@ -801,7 +847,16 @@ async fn main() {
             // Slogan typewriter (no asterisk yet)
             let slogan_start_time = slide_duration + 0.3; // slogan starts after title lands
             let slogan_chars = ((state.menu_timer - slogan_start_time) * 15.0).max(0.0) as usize;
-            let slogan_visible = &slogan_base[0..slogan_chars.min(slogan_base.len())];
+            let slogan_limit = slogan_chars.min(slogan_base.len());
+            if slogan_limit > state.slogan_chars_played {
+                if let Some(c) = slogan_base.chars().nth(state.slogan_chars_played) {
+                    if !c.is_whitespace() {
+                        game::play_sound("slogan_bling");
+                    }
+                }
+                state.slogan_chars_played = slogan_limit;
+            }
+            let slogan_visible = &slogan_base[0..slogan_limit];
             let slogan_done = slogan_chars >= slogan_base.len();
             let mut slogan_display = slogan_visible.to_string();
             if slogan_chars > 0 && !slogan_done {
@@ -1093,8 +1148,8 @@ async fn main() {
                 }
             );
 
-            // Countdown numbers directly above reticle for the last 10 seconds
-            if state.time_left <= 10.0 && state.time_left > 0.0 {
+            // Countdown numbers directly above reticle for the last 5 seconds
+            if state.time_left <= 5.0 && state.time_left > 0.0 {
                 let countdown_str = format!("{}", state.time_left.ceil() as i32);
                 let countdown_font_size = 14.0 * ui_scale;
                 let countdown_dim = measure_text(&countdown_str, Some(&font), countdown_font_size as u16, 1.0);
@@ -1312,6 +1367,72 @@ async fn main() {
             };
 
             draw_pixel_text(&val_str, px + 8.0 * ui_scale, py + val_dim.height + 5.0 * ui_scale, font_value_size * 1.3, credits_col, &font);
+
+            // ==========================================
+            // MISSILE SPECIAL ATTACK HUD ICON (above Credits panel)
+            // ==========================================
+            if !state.is_in_menu {
+                let icon_size = panel_h; // same height as credits box → square
+                let icon_gap = 5.0 * ui_scale;
+                let ix = px;                          // same left edge as credits
+                let iy = py - icon_size - icon_gap;   // directly above
+
+                let is_ready = state.missile_cooldown <= 0.0;
+                let cooldown_frac = (state.missile_cooldown / 5.0).clamp(0.0, 1.0); // 1.0 = full CD
+
+                // Background
+                draw_rectangle(ix, iy, icon_size, icon_size, Color::from_rgba(10, 15, 25, 220));
+
+                // Missile symbol (two diagonal lines + a dot) – pixel-art style
+                let mc = ix + icon_size / 2.0;
+                let my = iy + icon_size / 2.0;
+                let sym_r = icon_size * 0.28;
+                // Body line
+                draw_line(mc - sym_r, my + sym_r * 0.6, mc + sym_r, my - sym_r * 0.6, 2.0 * ui_scale,
+                    Color::from_rgba(255, 180, 60, 200));
+                // Fin lines
+                draw_line(mc - sym_r, my + sym_r * 0.6, mc - sym_r * 0.5, my + sym_r,
+                    2.0 * ui_scale, Color::from_rgba(255, 180, 60, 200));
+                draw_line(mc - sym_r, my + sym_r * 0.6, mc - sym_r * 1.1, my + sym_r * 0.2,
+                    2.0 * ui_scale, Color::from_rgba(255, 180, 60, 200));
+                // Warhead dot
+                draw_circle(mc + sym_r, my - sym_r * 0.6, 2.5 * ui_scale,
+                    Color::from_rgba(255, 220, 80, 255));
+
+                // Cooldown overlay: dark rect shrinking from top (full CD = fully covered)
+                if cooldown_frac > 0.001 {
+                    let overlay_h = icon_size * cooldown_frac;
+                    draw_rectangle(ix, iy, icon_size, overlay_h, Color::from_rgba(0, 0, 0, 170));
+                }
+
+                // Border: bright orange-yellow when ready, dim grey on cooldown
+                let border_col = if is_ready {
+                    // Pulsing glow when ready
+                    let pulse = ((get_time() * 5.0).sin() as f32 * 0.3 + 0.7).max(0.0);
+                    Color::from_rgba(255, 180, 30, (200.0 * pulse) as u8)
+                } else {
+                    Color::from_rgba(80, 80, 90, 160)
+                };
+                draw_pixel_rect_lines(ix, iy, icon_size, icon_size, 2.0 * ui_scale, border_col);
+
+                // "[R]" key label below icon
+                let key_font_size = 5.0 * ui_scale;
+                let key_label = if is_ready { "[R] READY" } else { "[R]" };
+                let key_dim = measure_text(key_label, Some(&font), key_font_size as u16, 1.0);
+                let key_col = if is_ready {
+                    Color::from_rgba(255, 180, 30, 200)
+                } else {
+                    Color::from_rgba(100, 100, 110, 180)
+                };
+                draw_pixel_text(
+                    key_label,
+                    ix + (icon_size - key_dim.width) / 2.0,
+                    iy + icon_size + 4.0 * ui_scale + key_dim.height,
+                    key_font_size,
+                    key_col,
+                    &font,
+                );
+            }
 
             // Weapon sprite rendering removed as requested
 

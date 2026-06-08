@@ -461,6 +461,41 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s12);
 
     // ==========================================
+    // SPRITE 13: Guided Missile (Glowing Cyber Sphere)
+    // ==========================================
+    let mut s13 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Draw glowing sphere
+    s13.draw_circle(32, 32, 10, c_red);
+    s13.draw_circle(32, 32, 7, c_neon_pink);
+    s13.draw_circle(32, 32, 4, c_neon_yellow);
+    s13.draw_circle(32, 32, 2, c_white);
+    sprites.push(s13);
+
+    // ==========================================
+    // SPRITE 14: Smoke Trail Stage 1 (Hot Fire)
+    // ==========================================
+    let mut s14 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    s14.draw_circle(32, 32, 8, c_neon_yellow);
+    s14.draw_circle(32, 32, 4, c_white);
+    sprites.push(s14);
+
+    // ==========================================
+    // SPRITE 15: Smoke Trail Stage 2 (Orange/Pink Spark)
+    // ==========================================
+    let mut s15 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    s15.draw_circle(32, 32, 10, c_neon_pink);
+    s15.draw_circle(32, 32, 6, c_neon_yellow);
+    sprites.push(s15);
+
+    // ==========================================
+    // SPRITE 16: Smoke Trail Stage 3 (Dark Grey Smoke)
+    // ==========================================
+    let mut s16 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    s16.draw_circle(32, 32, 12, 0x333333ff);
+    s16.draw_circle(32, 32, 8, 0x222222ff);
+    sprites.push(s16);
+
+    // ==========================================
     // WEAPON 0: Robo-Blaster Idle
     // ==========================================
     let mut w_idle = SpriteTexture::new(TEX_SIZE * 2, TEX_SIZE * 2, c_black);

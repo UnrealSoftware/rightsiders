@@ -376,6 +376,16 @@
             color: #fff !important;
         }
 
+        #now-playing {
+            cursor: pointer;
+            transition: opacity 0.5s ease, color 0.2s ease, text-shadow 0.2s ease;
+        }
+
+        #now-playing:hover {
+            color: var(--neon-pink) !important;
+            text-shadow: 0 0 10px rgba(255, 0, 127, 0.8) !important;
+        }
+
         @keyframes startBlink {
             from {
                 opacity: 0.05;
@@ -396,8 +406,11 @@
 				UNIT KX-128#67 // LAW ENFORCEMENT // APEX PRIME
 			</span>
         </div>
-        <div class="status-badge" id="sim-status">
-            System Online
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <div id="now-playing" style="font-size: 14px; color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0, 240, 255, 0.5); text-transform: uppercase; letter-spacing: 1.5px; opacity: 0; transition: opacity 0.5s ease; font-family: 'Share Tech Mono', monospace; font-weight: bold;"></div>
+            <div class="status-badge" id="sim-status">
+                System Online
+            </div>
         </div>
     </header>
 
@@ -463,6 +476,7 @@
     <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
     <script>
         let menuActive = true; // Starts in main menu
+        let enteringHighscore = false; // Set to true when player is entering name initials
         let startupJingle = new Audio('src/assets/rightsiders_startup.ogg');
         startupJingle.volume = 0.75;
         // Set when WASM calls set_menu_active(true) before the user has clicked
@@ -489,17 +503,20 @@
             const helpOverlay = document.getElementById("help-overlay");
             
             function toggleHelp() {
+                if (enteringHighscore) return;
                 if (helpOverlay) helpOverlay.classList.toggle("open");
             }
             
             if (toggleBtn) {
                 toggleBtn.addEventListener("click", (e) => {
+                    if (enteringHighscore) return;
                     e.stopPropagation();
                     toggleHelp();
                 });
             }
             
             window.addEventListener("keydown", (e) => {
+                if (enteringHighscore) return;
                 if (e.key === 'h' || e.key === 'H') {
                     toggleHelp();
                 }
@@ -509,6 +526,7 @@
             const toggleFSBtn = document.getElementById("toggle-fullscreen");
             
             function toggleFullscreen() {
+                if (enteringHighscore) return;
                 if (!document.fullscreenElement) {
                     document.documentElement.requestFullscreen().catch((err) => {
                         console.error(`Error attempting to enable fullscreen: ${err.message}`);
@@ -520,16 +538,27 @@
             
             if (toggleFSBtn) {
                 toggleFSBtn.addEventListener("click", (e) => {
+                    if (enteringHighscore) return;
                     e.stopPropagation();
                     toggleFullscreen();
                 });
             }
             
             window.addEventListener("keydown", (e) => {
+                if (enteringHighscore) return;
                 if (e.key === 'f' || e.key === 'F') {
                     toggleFullscreen();
                 }
             });
+
+            // Click listener to change background music tracks
+            const nowPlayingDiv = document.getElementById("now-playing");
+            if (nowPlayingDiv) {
+                nowPlayingDiv.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    playRandomTrack();
+                });
+            }
 
             // Open controls on start, then close after 6 seconds (if not in menu)
             setTimeout(() => {
@@ -727,6 +756,24 @@
                         pendingMenuJingle = false;
                         startupJingle.pause();
                         startupJingle.currentTime = 0;
+                    }
+                };
+                importObject.env.set_entering_highscore_js = (entering) => {
+                    enteringHighscore = entering ? true : false;
+                    const helpOverlay = document.getElementById("help-overlay");
+                    const toggleHelpBtn = document.getElementById("toggle-help");
+                    const toggleFSBtn = document.getElementById("toggle-fullscreen");
+                    
+                    if (enteringHighscore) {
+                        if (helpOverlay) helpOverlay.classList.remove("open");
+                        if (toggleHelpBtn) toggleHelpBtn.style.display = "none";
+                        if (toggleFSBtn) toggleFSBtn.style.display = "none";
+                    } else {
+                        if (toggleHelpBtn) toggleHelpBtn.style.display = "block";
+                        if (toggleFSBtn) toggleFSBtn.style.display = "block";
+                        if (menuActive && helpOverlay) {
+                            helpOverlay.classList.add("open");
+                        }
                     }
                 };
                 importObject.env.report_game_over_js = (score) => {
@@ -979,23 +1026,23 @@
                 const gain = audioCtx.createGain();
                 osc.type = 'sine';
                 
-                let freq = 500;
+                let freq = 450;
                 const parts = type.split('_');
                 if (parts.length > 2) {
                     const sec = parseInt(parts[2]);
-                    if (!isNaN(sec) && sec >= 1 && sec <= 10) {
-                        freq = 400 + (10 - sec) * 80; // 400 Hz at 10s, rising to 1120 Hz at 1s
+                    if (!isNaN(sec) && sec >= 1 && sec <= 5) {
+                        freq = 300 + (5 - sec) * 75; // deeper warning beep (300 Hz at 5s, rising to 600 Hz at 1s)
                     }
                 }
                 osc.frequency.setValueAtTime(freq, now);
                 
-                gain.gain.setValueAtTime(0.22, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                gain.gain.setValueAtTime(0.48, now); // louder volume (0.48 instead of 0.22)
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16); // slightly longer decay
                 
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
                 osc.start(now);
-                osc.stop(now + 0.13);
+                osc.stop(now + 0.17);
             }
             else if (type === 'time_over') {
                 // Deeper, longer, and louder dramatic descending power-down siren
@@ -1013,7 +1060,7 @@
                 osc2.frequency.setValueAtTime(120, now);
                 osc2.frequency.exponentialRampToValueAtTime(10, now + duration);
                 
-                gain.gain.setValueAtTime(0.65, now);
+                gain.gain.setValueAtTime(0.85, now); // louder (0.85 instead of 0.65)
                 gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
                 
                 osc1.connect(gain);
@@ -1025,11 +1072,213 @@
                 osc1.stop(now + duration);
                 osc2.stop(now + duration);
             }
+            else if (type === 'slogan_bling') {
+                // Light subtle bling sound, quicker than menu_pling
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(2200, now); // high crisp frequency
+                gain.gain.setValueAtTime(0.0, now);
+                gain.gain.linearRampToValueAtTime(0.08, now + 0.004); // very snappy attack
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08); // very quick decay
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.09);
+            }
+            else if (type === 'missile_launch') {
+                // Low rocket rumble + noise swoop
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(80, now);
+                osc.frequency.linearRampToValueAtTime(180, now + 0.4);
+
+                const oscFilter = audioCtx.createBiquadFilter();
+                oscFilter.type = 'lowpass';
+                oscFilter.frequency.setValueAtTime(300, now);
+
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
+
+                osc.connect(oscFilter);
+                oscFilter.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.4);
+
+                // Noise swoop
+                const bufferSize = audioCtx.sampleRate * 0.45;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2.0 - 1.0;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(150, now);
+                filter.frequency.exponentialRampToValueAtTime(1000, now + 0.45);
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.01, now);
+                noiseGain.gain.linearRampToValueAtTime(0.28, now + 0.1);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                noise.stop(now + 0.45);
+            }
+            else if (type === 'cash_earn') {
+                // Cascading series of 4 light, high-pitched digital chime tones
+                const notes = [1318.51, 1567.98, 2093.00, 2637.02]; // E6, G6, C7, E7
+                notes.forEach((freq, index) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(freq, now + index * 0.055);
+                    
+                    gain.gain.setValueAtTime(0.0, now + index * 0.055);
+                    gain.gain.linearRampToValueAtTime(0.08, now + index * 0.055 + 0.003); // very light volume
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.055 + 0.15);
+                    
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + index * 0.055);
+                    osc.stop(now + index * 0.055 + 0.16);
+                });
+
+                // Sparkly subtle high-passed noise burst layer
+                const bufferSize = audioCtx.sampleRate * 0.18;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2.0 - 1.0;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.setValueAtTime(6000, now);
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.03, now);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                noise.stop(now + 0.18);
+            }
+            else if (type === 'rank_top10') {
+                // Louder short bright congrats jingle: C5 -> E5 -> G5 -> C6 arpeggio
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, index) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + index * 0.08);
+                    
+                    gain.gain.setValueAtTime(0.0, now + index * 0.08);
+                    gain.gain.linearRampToValueAtTime(0.50, now + index * 0.08 + 0.005); // louder (0.50 instead of 0.25)
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.08 + 0.35);
+                    
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + index * 0.08);
+                    osc.stop(now + index * 0.08 + 0.36);
+                });
+            }
+            else if (type === 'rank_fail') {
+                // Louder short deep negative jingle: G3 -> Eb3 -> C3 with flat bend
+                const notes = [196.00, 155.56, 130.81];
+                notes.forEach((freq, index) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    
+                    const filter = audioCtx.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(400, now + index * 0.15);
+
+                    osc.frequency.setValueAtTime(freq, now + index * 0.15);
+                    if (index === 2) {
+                        osc.frequency.linearRampToValueAtTime(freq - 15, now + index * 0.15 + 0.55);
+                    }
+                    
+                    gain.gain.setValueAtTime(0.0, now + index * 0.15);
+                    gain.gain.linearRampToValueAtTime(0.45, now + index * 0.15 + 0.01); // louder (0.45 instead of 0.20)
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.15 + 0.55);
+                    
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + index * 0.15);
+                    osc.stop(now + index * 0.15 + 0.56);
+                });
+            }
+            else if (type === 'lane_swoosh') {
+                // Cyber-like swoosh sound - deeper and longer
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.exponentialRampToValueAtTime(500, now + 0.35); // swept over 0.35s from 180Hz to 500Hz
+
+                gain.gain.setValueAtTime(0.0, now);
+                gain.gain.linearRampToValueAtTime(0.15, now + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.35);
+
+                // Noise swoosh layer - deeper frequency, sweeps over 0.35s
+                const bufferSize = audioCtx.sampleRate * 0.35;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2.0 - 1.0;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.Q.setValueAtTime(5.0, now);
+                filter.frequency.setValueAtTime(120, now);
+                filter.frequency.exponentialRampToValueAtTime(1200, now + 0.35);
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.0, now);
+                noiseGain.gain.linearRampToValueAtTime(0.18, now + 0.08);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                noise.stop(now + 0.35);
+            }
         }
 
         function startMusic() {
             if (currentAudio) return; // already playing
             playRandomTrack();
+        }
+
+        function getTrackName(url) {
+            const filename = url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('.'));
+            return filename.replace(/_/g, ' ')
+                           .replace('alpha', '(ALPHA)')
+                           .replace('beta', '(BETA)');
         }
 
         function playRandomTrack() {
@@ -1050,6 +1299,16 @@
 
             const trackUrl = tracks[currentTrackIndex];
             console.log("Playing track:", trackUrl);
+
+            const trackName = getTrackName(trackUrl);
+            const nowPlayingDiv = document.getElementById("now-playing");
+            if (nowPlayingDiv) {
+                nowPlayingDiv.style.opacity = "0";
+                setTimeout(() => {
+                    nowPlayingDiv.textContent = "NOW PLAYING: " + trackName;
+                    nowPlayingDiv.style.opacity = "1";
+                }, 300);
+            }
 
             currentAudio = new Audio(trackUrl);
             currentAudio.volume = 0.35; // keep it at a comfortable background volume

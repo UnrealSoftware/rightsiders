@@ -7,6 +7,7 @@ unsafe extern "C" {
     fn load_scores_js(ptr: *mut u8, max_len: usize) -> usize;
     fn save_scores_js(ptr: *const u8, len: usize);
     fn is_game_started_js() -> bool;
+    fn set_entering_highscore_js(entering: bool);
 }
 
 pub fn play_sound(name: &str) {
@@ -42,6 +43,17 @@ pub fn is_game_started() -> bool {
     }
 }
 
+pub fn set_entering_highscore(entering: bool) {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        set_entering_highscore_js(entering);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[entering_highscore] {}", entering);
+    }
+}
+
 
 
 #[derive(Clone, Copy, PartialEq)]
@@ -63,6 +75,7 @@ pub struct BloodDecal {
 pub enum ParticleType {
     BloodSprinkle,
     GoreDebris,
+    Smoke,
 }
 
 #[derive(Clone)]
@@ -305,6 +318,22 @@ pub struct FloatingText {
     pub duration: f32,
 }
 
+/// A guided missile in flight
+pub struct GuidedMissile {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,       // Height in world units
+    pub vx: f32,
+    pub vy: f32,
+    pub vz: f32,
+    pub target_id: String,
+    pub target_x: f32,
+    pub target_y: f32,
+    pub flight_time: f32,    // Elapsed since launch
+    pub steer_delay: f32,    // Time before homing kicks in
+    pub total_flight: f32,   // Total planned flight duration
+}
+
 pub struct Player {
     pub x: f32,
     pub y: f32,
@@ -353,6 +382,7 @@ pub struct GameState {
     pub menu_particles: Vec<MenuParticle>,
     pub menu_title_landed: bool,
     pub menu_star_played: bool,
+    pub slogan_chars_played: usize,
     pub time_left: f32,
     pub is_entering_highscore: bool,
     pub highscore_name: String,
@@ -361,6 +391,9 @@ pub struct GameState {
     pub show_leaderboard: bool,
     pub leaderboard_data: Vec<(String, i32)>,
     pub new_rank: Option<usize>,
+    // Guided missile special attack
+    pub missiles: Vec<GuidedMissile>,
+    pub missile_cooldown: f32, // 0.0 = ready, counts down from 5.0
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -420,19 +453,23 @@ impl GameState {
             menu_particles: Vec::new(),
             menu_title_landed: false,
             menu_star_played: false,
+            slogan_chars_played: 0,
             time_left: 30.0,
             is_entering_highscore: false,
             highscore_name: String::new(),
             highscore_input_delay: 0.0,
-            last_beep_second: 11,
+            last_beep_second: 6,
             show_leaderboard: false,
             leaderboard_data: Vec::new(),
             new_rank: None,
+            missiles: Vec::new(),
+            missile_cooldown: 0.0,
             rng_state: 123456789,
         };
 
         // Notify JS menu is active
         update_menu_active_js(true);
+        set_entering_highscore(false);
 
         // Initial citizens will spawn dynamically in the update loop based on player visibility
 
@@ -543,6 +580,109 @@ impl GameState {
                 first_impact: true,
             });
         }
+    }
+
+    /// Spawn a reduced blood explosion (fewer particles, for missile hits)
+    pub fn spawn_blood_explosion_reduced(&mut self, x: f32, y: f32) {
+        // Only sprinkles, no gore chunks – keeps performance stable during multi-kill salvos
+        let num_sprinkles = 6;
+        for _ in 0..num_sprinkles {
+            let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
+            let speed_h = 0.6 + rng_float(&mut self.rng_state) * 1.2;
+            let vx = theta.cos() * speed_h;
+            let vy = theta.sin() * speed_h;
+            let vz = 0.8 + rng_float(&mut self.rng_state) * 1.5;
+            let z = 0.1 + rng_float(&mut self.rng_state) * 0.3;
+            self.particles.push(Particle {
+                x, y, z, vx, vy, vz,
+                p_type: ParticleType::BloodSprinkle,
+                bounces: 1,
+                lifetime: 0.4 + rng_float(&mut self.rng_state) * 0.4,
+                first_impact: true,
+            });
+        }
+    }
+
+    /// Launch guided missiles at all visible leftsiders
+    pub fn trigger_missile_salvo(&mut self) {
+        if self.missile_cooldown > 0.0 || self.player.health <= 0.0 {
+            return;
+        }
+
+        let px = self.player.x;
+        let py = self.player.y;
+        let pdx = self.player.dir_x;
+        let pdy = self.player.dir_y;
+
+        // Collect visible leftsider targets
+        let mut targets: Vec<(usize, f32, f32)> = Vec::new();
+        for (idx, citizen) in self.citizens.iter().enumerate() {
+            if citizen.state != CitizenState::Walking || !citizen.is_leftsider {
+                continue;
+            }
+            let mut dx = citizen.x - px;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+            let mut dy = citizen.y - py;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+            let dist = (dx * dx + dy * dy).sqrt();
+            let dot = dx * pdx + dy * pdy;
+            if dist < 16.0 && dot > 0.0 {
+                targets.push((idx, citizen.x, citizen.y));
+            }
+        }
+
+        if targets.is_empty() {
+            return; // Nothing to shoot at – don't consume cooldown
+        }
+
+        // Launch one missile per target
+        for (idx, tx, ty) in &targets {
+            // Randomize flight duration: 0.4 to 1.0 s
+            let rand_a = rng_float(&mut self.rng_state);
+            let rand_b = rng_float(&mut self.rng_state);
+            let rand_c = rng_float(&mut self.rng_state);
+            let total_flight = 0.4 + rand_a * 0.6;
+            // Steer kicks in after 35% of flight time to allow arcing up into the sky first
+            let steer_delay = total_flight * 0.35;
+
+            // Calculate distance to target to set appropriate base speed
+            let mut dx = *tx - px;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+            let mut dy = *ty - py;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+            let dist = (dx * dx + dy * dy).sqrt().max(1.0);
+
+            // Initial velocity: forward along player view direction with tiny random offset (±0.1 rad / ±5 deg)
+            let angle_offset = (rand_c - 0.5) * 0.2; 
+            let cos_a = angle_offset.cos();
+            let sin_a = angle_offset.sin();
+            let base_speed = dist / total_flight; // Cover the distance in target duration
+            let init_vx = (pdx * cos_a - pdy * sin_a) * base_speed;
+            let init_vy = (pdx * sin_a + pdy * cos_a) * base_speed;
+            let init_vz = 3.5 + rand_b * 1.5; // Strong initial upward arc into the sky
+
+            self.missiles.push(GuidedMissile {
+                x: px,
+                y: py,
+                z: 0.4,
+                vx: init_vx,
+                vy: init_vy,
+                vz: init_vz,
+                target_id: self.citizens[*idx].id_num.clone(),
+                target_x: *tx,
+                target_y: *ty,
+                flight_time: 0.0,
+                steer_delay,
+                total_flight,
+            });
+        }
+
+        self.missile_cooldown = 5.0;
+        play_sound("missile_launch");
     }
 
     /// Primary game state update loop
@@ -683,6 +823,16 @@ impl GameState {
                 return false;
             }
 
+            if p.p_type == ParticleType::Smoke {
+                p.x = (p.x + p.vx * dt).rem_euclid(map_w);
+                p.y = (p.y + p.vy * dt).rem_euclid(map_h);
+                p.z += p.vz * dt;
+                p.vx *= 0.95;
+                p.vy *= 0.95;
+                p.vz *= 0.95;
+                return true;
+            }
+
             p.vz -= gravity * dt;
 
             // Physics step
@@ -791,6 +941,151 @@ impl GameState {
             *duration -= dt;
             if *duration <= 0.0 {
                 self.credits_flash = None;
+            }
+        }
+
+        // Tick missile cooldown
+        if self.missile_cooldown > 0.0 {
+            self.missile_cooldown = (self.missile_cooldown - dt).max(0.0);
+        }
+
+        // Update guided missiles
+        {
+            let _px = self.player.x;
+            let _py = self.player.y;
+            let map_w = MAP_WIDTH as f32;
+            let map_h = MAP_HEIGHT as f32;
+
+            // Collect indices to remove and kill events
+            let mut to_remove: Vec<usize> = Vec::new();
+            let mut kills: Vec<(usize, f32, f32)> = Vec::new(); // (citizen_idx, x, y)
+            let mut blood_spawned: usize = 0;
+
+            for (mi, missile) in self.missiles.iter_mut().enumerate() {
+                missile.flight_time += dt;
+
+                // Phase 2: apply homing steering after steer_delay
+                if missile.flight_time >= missile.steer_delay {
+                    // Update target position snapshot in case citizen moved
+                    // (we stored it at launch; for simplicity we use the snapshot)
+                    let mut tdx = missile.target_x - missile.x;
+                    if tdx > map_w / 2.0 { tdx -= map_w; }
+                    else if tdx < -(map_w / 2.0) { tdx += map_w; }
+                    let mut tdy = missile.target_y - missile.y;
+                    if tdy > map_h / 2.0 { tdy -= map_h; }
+                    else if tdy < -(map_h / 2.0) { tdy += map_h; }
+
+                    // Remaining time to target
+                    let time_left = (missile.total_flight - missile.flight_time).max(0.01);
+
+                    // Desired velocity to reach target in remaining time
+                    let desired_vx = tdx / time_left;
+                    let desired_vy = tdy / time_left;
+
+                    // Descend to z=0.4 (head height) for terminal phase
+                    let desired_vz = (0.4 - missile.z) / time_left;
+
+                    // Exponential steering: blend toward desired velocity
+                    let steer_rate = 9.0; // aggressiveness of course correction
+                    missile.vx += (desired_vx - missile.vx) * steer_rate * dt;
+                    missile.vy += (desired_vy - missile.vy) * steer_rate * dt;
+                    missile.vz += (desired_vz - missile.vz) * steer_rate * dt;
+                } else {
+                    // Phase 1: just gravity drag on Z so it arcs naturally
+                    missile.vz -= 1.5 * dt;
+                }
+
+                // Move missile
+                missile.x = (missile.x + missile.vx * dt).rem_euclid(map_w);
+                missile.y = (missile.y + missile.vy * dt).rem_euclid(map_h);
+                missile.z += missile.vz * dt;
+                if missile.z < 0.1 { missile.z = 0.1; } // don't go underground
+
+                // Emit 3D smoke particle in the scene
+                let rand_vx = (rng_float(&mut self.rng_state) - 0.5) * 0.4;
+                let rand_vy = (rng_float(&mut self.rng_state) - 0.5) * 0.4;
+                let rand_vz = (rng_float(&mut self.rng_state) - 0.2) * 0.4;
+                self.particles.push(Particle {
+                    x: missile.x,
+                    y: missile.y,
+                    z: missile.z,
+                    vx: -missile.vx * 0.12 + rand_vx,
+                    vy: -missile.vy * 0.12 + rand_vy,
+                    vz: rand_vz,
+                    p_type: ParticleType::Smoke,
+                    bounces: 0,
+                    lifetime: 0.8,
+                    first_impact: false,
+                });
+
+                // Check arrival
+                if missile.flight_time >= missile.total_flight {
+                    to_remove.push(mi);
+                    // Schedule kill
+                    if let Some(cidx) = self.citizens.iter().position(|c| c.id_num == missile.target_id) {
+                        let c = &self.citizens[cidx];
+                        if c.state == CitizenState::Walking && c.is_leftsider {
+                            kills.push((cidx, c.x, c.y));
+                        }
+                    }
+                }
+            }
+
+            // Remove finished missiles (in reverse order to preserve indices)
+            to_remove.sort_unstable();
+            to_remove.dedup();
+            for mi in to_remove.iter().rev() {
+                self.missiles.swap_remove(*mi);
+            }
+
+            // Apply kills
+            for (cidx, kx, ky) in kills {
+                if cidx >= self.citizens.len() { continue; }
+                if self.citizens[cidx].state != CitizenState::Walking { continue; }
+                if !self.citizens[cidx].is_leftsider { continue; }
+
+                self.citizens[cidx].state = CitizenState::Exploding(0.0);
+                self.citizens[cidx].shoot_cooldown = 0.0;
+
+                play_sound("explosion");
+                play_sound("cash_earn");
+
+                let reward = 1000;
+                self.player.credits += reward;
+                self.screen_shake = (self.screen_shake + 0.1).min(0.3);
+
+                self.floating_texts.push(FloatingText {
+                    text: format!("+{} CR", reward),
+                    x: kx,
+                    y: ky - 0.4,
+                    color: 0x39ff14ff,
+                    duration: 1.2,
+                });
+
+                self.credits_flash = Some((
+                    format!("CRIMINAL ELIMINATED // +{} CR", reward),
+                    0x39ff14ff,
+                    1.2,
+                ));
+
+                // Throttle blood: max 3 full explosions per salvo
+                if blood_spawned < 3 {
+                    self.spawn_blood_explosion_reduced(kx, ky);
+                    blood_spawned += 1;
+                }
+            }
+
+            // Drop missiles targeting despawned/dead citizens (safe borrow split)
+            {
+                let keep: Vec<bool> = self.missiles.iter().map(|m| {
+                    if let Some(c) = self.citizens.iter().find(|c| c.id_num == m.target_id) {
+                        c.state == CitizenState::Walking
+                    } else {
+                        false
+                    }
+                }).collect();
+                let mut i = 0;
+                self.missiles.retain(|_| { let k = keep[i]; i += 1; k });
             }
         }
 
@@ -1168,6 +1463,7 @@ impl GameState {
                             let reward = 1000;
                             self.player.credits += reward;
                             play_sound("explosion");
+                            play_sound("cash_earn");
                             
                             self.floating_texts.push(FloatingText {
                                 text: format!("+{} CR", reward),
@@ -1245,11 +1541,13 @@ impl GameState {
         if self.player.health <= 0.0 {
             return;
         }
-        if switch_left {
+        if switch_left && !self.player.is_leftsider {
             self.player.is_leftsider = true;
+            play_sound("lane_swoosh");
         }
-        if switch_right {
+        if switch_right && self.player.is_leftsider {
             self.player.is_leftsider = false;
+            play_sound("lane_swoosh");
         }
     }
 
