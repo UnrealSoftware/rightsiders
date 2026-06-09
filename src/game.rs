@@ -537,7 +537,7 @@ impl GameState {
         let num_sprinkles = 15;
         for _ in 0..num_sprinkles {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.4 + rng_float(&mut self.rng_state) * 0.8; // Reduced horizontal spread
+            let speed_h = 0.8 + rng_float(&mut self.rng_state) * 1.6; // 2x wider horizontal spread
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
             let vz = 0.8 + rng_float(&mut self.rng_state) * 1.5;     // Lower vertical bounce
@@ -561,7 +561,7 @@ impl GameState {
         let num_chunks = 6;
         for _ in 0..num_chunks {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.2 + rng_float(&mut self.rng_state) * 0.6; // Reduced horizontal spread
+            let speed_h = 0.4 + rng_float(&mut self.rng_state) * 1.2; // 2x wider horizontal spread
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
             let vz = 1.0 + rng_float(&mut self.rng_state) * 1.8;     // Lower vertical bounce
@@ -914,10 +914,24 @@ impl GameState {
             self.decals.drain(0..excess);
         }
 
-        // Update decals lifetime
+        // Update decals lifetime & filter out distant decals so they are gone once scrolled out
+        let px = self.player.x;
+        let py = self.player.y;
         self.decals.retain_mut(|decal| {
             decal.lifetime -= dt;
-            decal.lifetime > 0.0
+            if decal.lifetime <= 0.0 {
+                return false;
+            }
+
+            // Calculate distance to player (wrapping on torus)
+            let mut dx = decal.x - px;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= map_w; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += map_w; }
+            let mut dy = decal.y - py;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= map_h; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += map_h; }
+
+            dx * dx + dy * dy < 15.0 * 15.0
         });
 
         // Update credits flash banner
