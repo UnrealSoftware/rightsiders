@@ -1,6 +1,6 @@
 # Right Siders?!
 Right Siders is a game about walking on the right side (literally). Implemented using Rust, Macroquad, JavaScript and HTML.
-99% of the code is written by agentic AI using Google's Antigravity with Gemini 3.5 Flash (Medium). Music is created with Suno.
+99% of the code is written by agentic AI using Google's Antigravity with Gemini 3.5 Flash (Medium) but it was all prompted by a highly experienced super professional top tier game developer. Music is created with Suno.
 You can play the game at www.rightsiders.de - it even works on mobile!
 
 ## Why?
@@ -11,7 +11,10 @@ It’s time to put an end to this madness. Walk on the right side, people. It’
 Right Siders aims to draw attention to this important problem and its obvious and simple solution.
 
 ## I'm living in a country with left-hand driving and I feel offended!
-I understand your pain. Right Siders is made in Germany we are used to right-hand driving. Good news is that the game is open source. I can't wait to see your Left Siders mod!
+I understand your pain. Right Siders is made in Germany and we are used to right-hand driving. Good news is that the game is open source. I can't wait to see your Left Siders mod!
+
+## Is this political?
+Not at all. A true right sider just prefers to walk right. Not in a political way. We even say so in the main menu.
 
 ## License
 The source code of this project is licensed under the [MIT License](LICENSE).
