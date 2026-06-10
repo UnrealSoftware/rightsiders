@@ -496,6 +496,46 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s16);
 
     // ==========================================
+    // SPRITE 17: Cyber Hover-Cruiser A (Cyan / Neon Blue)
+    // ==========================================
+    let mut s17 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Fuselage
+    s17.draw_rect(12, 32, 40, 16, c_gray);
+    s17.draw_rect(14, 30, 36, 18, c_dark_blue);
+    // Thrusters (Cyan)
+    s17.draw_rect(8, 36, 6, 10, c_neon_cyan);
+    s17.draw_rect(50, 36, 6, 10, c_neon_cyan);
+    // Canopy
+    s17.draw_rect(24, 24, 16, 8, c_black);
+    s17.draw_rect(26, 26, 12, 6, c_neon_cyan);
+    // Hover pads underglow
+    s17.draw_rect(16, 48, 8, 3, c_neon_cyan);
+    s17.draw_rect(40, 48, 8, 3, c_neon_cyan);
+    s17.draw_circle(20, 50, 4, c_neon_cyan);
+    s17.draw_circle(44, 50, 4, c_neon_cyan);
+    sprites.push(s17);
+
+    // ==========================================
+    // SPRITE 18: Cyber Hover-Cruiser B (Neon Pink)
+    // ==========================================
+    let mut s18 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Fuselage
+    s18.draw_rect(12, 32, 40, 16, c_dark_gray);
+    s18.draw_rect(14, 30, 36, 18, 0x330808ff);
+    // Thrusters (Pink)
+    s18.draw_rect(8, 36, 6, 10, c_neon_pink);
+    s18.draw_rect(50, 36, 6, 10, c_neon_pink);
+    // Canopy
+    s18.draw_rect(24, 24, 16, 8, c_black);
+    s18.draw_rect(26, 26, 12, 6, c_neon_pink);
+    // Hover pads underglow
+    s18.draw_rect(16, 48, 8, 3, c_neon_pink);
+    s18.draw_rect(40, 48, 8, 3, c_neon_pink);
+    s18.draw_circle(20, 50, 4, c_neon_pink);
+    s18.draw_circle(44, 50, 4, c_neon_pink);
+    sprites.push(s18);
+
+    // ==========================================
     // WEAPON 0: Robo-Blaster Idle
     // ==========================================
     let mut w_idle = SpriteTexture::new(TEX_SIZE * 2, TEX_SIZE * 2, c_black);

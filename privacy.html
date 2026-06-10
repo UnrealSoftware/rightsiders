@@ -12,6 +12,8 @@
             --neon-cyan: #00f0ff;
             --neon-pink: #ff007f;
             --neon-green: #39ff14;
+            --neon-yellow: #ffea00;
+            --neon-red: #ff003c;
             --bg-dark: #0a0b10;
             --panel-bg: rgba(16, 18, 27, 0.85);
             --border-glow: 0 0 15px rgba(0, 240, 255, 0.3);
@@ -35,7 +37,7 @@
             display: flex;
             flex-direction: column;
             padding-top: 80px; /* space for fixed header */
-            padding-bottom: 80px; /* space for fixed footer */
+            padding-bottom: 40px;
         }
 
         header {
@@ -73,19 +75,55 @@
 
         .status-badge {
             font-size: 14px;
-            border: 1px solid var(--neon-green);
-            color: var(--neon-green);
+            border: 1px solid var(--neon-yellow);
+            color: var(--neon-yellow);
             padding: 4px 12px;
             border-radius: 4px;
-            background: rgba(57, 255, 20, 0.1);
+            background: rgba(255, 234, 0, 0.08);
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            animation: pulse 2s infinite alternate;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: status-blink 1s infinite steps(1);
         }
 
-        @keyframes pulse {
-            from { box-shadow: 0 0 5px rgba(57, 255, 20, 0.2); }
-            to { box-shadow: 0 0 15px rgba(57, 255, 20, 0.6); }
+        .status-badge::before {
+            content: "";
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: var(--neon-yellow);
+            border-radius: 50%;
+            box-shadow: 0 0 6px var(--neon-yellow);
+            animation: dot-blink 1s infinite steps(1);
+        }
+
+        @keyframes status-blink {
+            0%, 49% {
+                border-color: var(--neon-yellow);
+                color: var(--neon-yellow);
+                background: rgba(255, 234, 0, 0.08);
+                box-shadow: 0 0 8px rgba(255, 234, 0, 0.3);
+            }
+            50%, 100% {
+                border-color: var(--neon-red);
+                color: var(--neon-red);
+                background: rgba(255, 0, 60, 0.08);
+                box-shadow: 0 0 8px rgba(255, 0, 60, 0.3);
+            }
+        }
+
+        @keyframes dot-blink {
+            0%, 49% {
+                background-color: var(--neon-yellow);
+                box-shadow: 0 0 6px var(--neon-yellow);
+            }
+            50%, 100% {
+                background-color: var(--neon-red);
+                box-shadow: 0 0 6px var(--neon-red);
+            }
         }
 
         /* CRT Effects Overlay */
@@ -240,36 +278,7 @@
             transform: translateY(-2px);
         }
 
-        footer {
-            position: fixed;
-            bottom: 12px;
-            left: 50%;
-            transform: translateX(-50%);
-            text-align: center;
-            padding: 6px 16px;
-            font-size: 11px;
-            color: rgba(148, 163, 184, 0.8);
-            background: rgba(10, 11, 16, 0.85);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(0, 240, 255, 0.2);
-            border-radius: 30px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5), var(--border-glow);
-            z-index: 30;
-            pointer-events: auto;
-            white-space: nowrap;
-        }
 
-        footer a {
-            color: var(--neon-cyan);
-            text-decoration: none;
-            font-weight: bold;
-        }
-
-        footer a:hover {
-            color: var(--neon-pink);
-            text-shadow: 0 0 8px rgba(255, 0, 127, 0.6);
-            text-decoration: underline;
-        }
 
         .email-obfuscated {
             color: var(--neon-cyan);
@@ -369,13 +378,7 @@
         </div>
     </div>
 
-    <footer>
-        RIGHTSIDERS // Built with Rust + Macroquad //
-        <a href="index.html">GAME</a> //
-        <a href="https://github.com/UnrealSoftware/rightsiders">GIT</a> //
-        <a href="https://www.unrealsoftware.de/contact.php" target="_blank">CONTACT</a> //
-        <a href="privacy.html">PRIVACY</a>
-    </footer>
+
 
     <script>
         function revealAndEmail(el) {

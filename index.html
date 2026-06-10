@@ -343,6 +343,13 @@
             white-space: nowrap;
             overflow: hidden;
             border-right: 2px solid transparent;
+            transition: color 0.25s ease-out, text-shadow 0.25s ease-out;
+        }
+
+        .loader-line.flash {
+            color: #ffffff !important;
+            text-shadow: 0 0 8px #ffffff, 0 0 15px #ffffff !important;
+            transition: none !important;
         }
 
         .loader-bar-container {
@@ -350,15 +357,40 @@
             height: 6px;
             background: #1e293b;
             border-radius: 3px;
-            overflow: hidden;
             margin-top: 15px;
+            position: relative;
         }
 
         .loader-bar {
             width: 0%;
             height: 100%;
             background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
-            animation: loadProgress 3.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            border-radius: 3px;
+            animation: loadProgress 1.0s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            position: relative;
+        }
+
+        .loader-bar::after {
+            content: "";
+            position: absolute;
+            right: -14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 28px;
+            background: radial-gradient(circle, rgba(255, 0, 127, 0.9) 0%, rgba(255, 0, 127, 0) 60%);
+            border-radius: 50%;
+            mix-blend-mode: screen;
+            animation: bulb-glow 0.8s infinite alternate;
+        }
+
+        @keyframes bulb-glow {
+            0% {
+                transform: translateY(-50%) scale(0.85);
+            }
+            100% {
+                transform: translateY(-50%) scale(1.15);
+            }
         }
 
         @keyframes loadProgress {
@@ -396,9 +428,143 @@
                 box-shadow: 0 0 15px rgba(57, 255, 20, 0.45);
             }
         }
+
+        /* Music Selector Modal styling */
+        .music-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 8, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        .music-modal-overlay.open {
+            display: block;
+            opacity: 1;
+        }
+        .music-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(10, 15, 25, 0.98);
+            border: 2px solid var(--neon-cyan);
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.35), inset 0 0 15px rgba(0, 240, 255, 0.1);
+            border-radius: 6px;
+            padding: 24px;
+            z-index: 10000;
+            width: 340px;
+            font-family: 'Share Tech Mono', monospace;
+            color: #fff;
+            opacity: 0;
+            transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .music-modal.open {
+            display: block;
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .music-modal h3 {
+            color: var(--neon-cyan);
+            margin-top: 0;
+            margin-bottom: 20px;
+            text-align: center;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+            border-bottom: 1px dashed rgba(0, 240, 255, 0.3);
+            padding-bottom: 10px;
+        }
+        .track-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .track-item {
+            padding: 12px 14px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(0, 240, 255, 0.25);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-size: 13px;
+        }
+        .track-item:hover {
+            background: rgba(0, 240, 255, 0.08);
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+            color: var(--neon-cyan);
+            text-shadow: 0 0 5px rgba(0, 240, 255, 0.5);
+            transform: translateX(4px);
+        }
+        .track-item.active {
+            background: rgba(57, 255, 20, 0.08);
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+            box-shadow: 0 0 12px rgba(57, 255, 20, 0.3);
+            text-shadow: 0 0 5px rgba(57, 255, 20, 0.5);
+            font-weight: bold;
+        }
+        .stop-music-btn {
+            padding: 12px 14px;
+            background: rgba(255, 0, 127, 0.04);
+            border: 1px solid rgba(255, 0, 127, 0.35);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-size: 13px;
+            text-align: center;
+            color: var(--neon-pink);
+            font-weight: bold;
+            box-shadow: 0 0 8px rgba(255, 0, 127, 0.1);
+        }
+        .stop-music-btn:hover {
+            background: rgba(255, 0, 127, 0.18);
+            border-color: var(--neon-pink);
+            box-shadow: 0 0 15px rgba(255, 0, 127, 0.45);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
+        .close-music-modal {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            font-size: 20px;
+            transition: color 0.2s ease;
+        }
+        .close-music-modal:hover {
+            color: var(--neon-pink);
+            text-shadow: 0 0 5px rgba(255, 0, 127, 0.5);
+        }
     </style>
 </head>
 <body>
+
+    <!-- Music Selector Modal -->
+    <div id="music-modal-overlay" class="music-modal-overlay"></div>
+    <div id="music-modal" class="music-modal">
+        <button id="close-music-modal" class="close-music-modal">&times;</button>
+        <h3>SELECT TRACK</h3>
+        <div id="track-list" class="track-list"></div>
+        <button id="stop-music-btn" class="stop-music-btn" style="width: 100%;">STOP MUSIC</button>
+    </div>
 
     <header>
         <div class="logo">
@@ -422,6 +588,7 @@
                     <div class="loader-bar-container">
                         <div class="loader-bar"></div>
                     </div>
+                    <div class="audio-warning-text" style="text-align: center; color: #64748b; font-size: 11px; margin-top: 15px; font-family: 'Share Tech Mono', monospace; text-shadow: none;">Attention: Will play music and sound effects!</div>
                 </div>
             </div>
 
@@ -577,7 +744,31 @@
             if (nowPlayingDiv) {
                 nowPlayingDiv.addEventListener("click", (e) => {
                     e.stopPropagation();
-                    playRandomTrack();
+                    openMusicModal();
+                });
+            }
+
+            // Hook up music modal controls
+            const closeMusicBtn = document.getElementById("close-music-modal");
+            if (closeMusicBtn) {
+                closeMusicBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeMusicModal();
+                });
+            }
+            const musicOverlay = document.getElementById("music-modal-overlay");
+            if (musicOverlay) {
+                musicOverlay.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeMusicModal();
+                });
+            }
+            const stopMusicBtn = document.getElementById("stop-music-btn");
+            if (stopMusicBtn) {
+                stopMusicBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    stopMusic();
+                    closeMusicModal();
                 });
             }
 
@@ -624,11 +815,14 @@
 
                     if (startupCharIdx >= line.text.length) {
                         lineDiv.textContent = line.text; // Remove cursor on line end
+                        lineDiv.classList.add("flash");
+                        void lineDiv.offsetHeight; // Force reflow
+                        lineDiv.classList.remove("flash");
                         startupLineIdx++;
                         startupCharIdx = 0;
-                        setTimeout(typeStartupLine, 120); // Pause between lines
+                        setTimeout(typeStartupLine, 35); // Pause between lines
                     } else {
-                        setTimeout(typeStartupLine, 10); // Type letter by letter very quickly
+                        setTimeout(typeStartupLine, 2); // Type letter by letter very quickly
                     }
                 }
             }
@@ -663,7 +857,12 @@
 
                 const terminal = document.querySelector(".loader-terminal");
                 if (terminal) {
-                    terminal.appendChild(startBtn);
+                    const warningText = terminal.querySelector(".audio-warning-text");
+                    if (warningText) {
+                        terminal.insertBefore(startBtn, warningText);
+                    } else {
+                        terminal.appendChild(startBtn);
+                    }
                 }
 
                 startBtn.addEventListener("click", (e) => {
@@ -695,7 +894,7 @@
                         setTimeout(() => loader.remove(), 400);
                     }
                 });
-            }, 3200);
+            }, 1000);
 
 
         });
@@ -708,9 +907,9 @@
         let currentTrackIndex = -1;
         let gameStarted = false;
         const tracks = [
+            'src/assets/apex_prime.mp3',
             'src/assets/lane_enforcer.mp3',
-            'src/assets/lane_patrol_override_alpha.mp3',
-            'src/assets/lane_patrol_override_beta.mp3',
+            'src/assets/lane_patrol_override.mp3',
             'src/assets/metro_unit.mp3',
             'src/assets/right_siders.mp3'
         ];
@@ -1285,6 +1484,124 @@
             return filename.replace(/_/g, ' ')
                            .replace('alpha', '(ALPHA)')
                            .replace('beta', '(BETA)');
+        }
+
+        function openMusicModal() {
+            const overlay = document.getElementById("music-modal-overlay");
+            const modal = document.getElementById("music-modal");
+            const trackListDiv = document.getElementById("track-list");
+
+            if (!overlay || !modal || !trackListDiv) return;
+
+            // Clear previous items
+            trackListDiv.innerHTML = "";
+
+            // Populate track list
+            tracks.forEach((trackUrl, index) => {
+                const trackName = getTrackName(trackUrl);
+                const trackItem = document.createElement("div");
+                trackItem.className = "track-item";
+                if (currentAudio && !currentAudio.paused && index === currentTrackIndex) {
+                    trackItem.classList.add("active");
+                }
+                trackItem.textContent = trackName;
+                trackItem.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    playSpecificTrack(index);
+                    closeMusicModal();
+                });
+                trackListDiv.appendChild(trackItem);
+            });
+
+            // Set active state for Stop Music button
+            const stopBtn = document.getElementById("stop-music-btn");
+            if (stopBtn) {
+                if (!currentAudio || currentAudio.paused) {
+                    stopBtn.style.background = "rgba(255, 0, 127, 0.18)";
+                    stopBtn.style.borderColor = "var(--neon-pink)";
+                    stopBtn.style.color = "#fff";
+                } else {
+                    stopBtn.style.background = "";
+                    stopBtn.style.borderColor = "";
+                    stopBtn.style.color = "";
+                }
+            }
+
+            overlay.style.display = "block";
+            modal.style.display = "block";
+
+            // Force reflow
+            void modal.offsetHeight;
+
+            overlay.classList.add("open");
+            modal.classList.add("open");
+        }
+
+        function closeMusicModal() {
+            const overlay = document.getElementById("music-modal-overlay");
+            const modal = document.getElementById("music-modal");
+            if (overlay && modal) {
+                overlay.classList.remove("open");
+                modal.classList.remove("open");
+                setTimeout(() => {
+                    if (!overlay.classList.contains("open")) {
+                        overlay.style.display = "none";
+                        modal.style.display = "none";
+                    }
+                }, 250);
+            }
+        }
+
+        function playSpecificTrack(index) {
+            // Ensure audio context is active
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            } else if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.onended = null;
+            }
+
+            currentTrackIndex = index;
+            const trackUrl = tracks[currentTrackIndex];
+            const trackName = getTrackName(trackUrl);
+
+            const nowPlayingDiv = document.getElementById("now-playing");
+            if (nowPlayingDiv) {
+                nowPlayingDiv.style.opacity = "0";
+                setTimeout(() => {
+                    nowPlayingDiv.textContent = "NOW PLAYING: " + trackName;
+                    nowPlayingDiv.style.opacity = "1";
+                }, 300);
+            }
+
+            currentAudio = new Audio(trackUrl);
+            currentAudio.volume = 0.35;
+            currentAudio.play().catch(err => {
+                console.error("Audio playback error:", err);
+            });
+
+            currentAudio.onended = () => {
+                playRandomTrack();
+            };
+        }
+
+        function stopMusic() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.onended = null;
+            }
+            const nowPlayingDiv = document.getElementById("now-playing");
+            if (nowPlayingDiv) {
+                nowPlayingDiv.style.opacity = "0";
+                setTimeout(() => {
+                    nowPlayingDiv.textContent = "MUSIC STOPPED";
+                    nowPlayingDiv.style.opacity = "1";
+                }, 300);
+            }
         }
 
         function playRandomTrack() {

@@ -93,6 +93,21 @@ pub struct MenuParticle {
 }
 
 #[derive(Clone)]
+pub struct MenuShockwave {
+    pub x: f32,
+    pub y: f32,
+    pub radius: f32,
+    pub max_radius: f32,
+    pub speed: f32,
+    pub lifetime: f32,
+    pub max_lifetime: f32,
+    pub thickness: f32,
+    pub color_r: u8,
+    pub color_g: u8,
+    pub color_b: u8,
+}
+
+#[derive(Clone)]
 pub struct Particle {
     pub x: f32,
     pub y: f32,
@@ -104,6 +119,74 @@ pub struct Particle {
     pub bounces: u32,
     pub lifetime: f32,
     pub first_impact: bool,
+}
+
+pub struct Vehicle {
+    pub x: f32,
+    pub y: f32,
+    pub base_x: f32,
+    pub base_y: f32,
+    pub tx: usize,
+    pub ty: usize,
+    pub prev_tx: usize,
+    pub prev_ty: usize,
+    pub next_tx: usize,
+    pub next_ty: usize,
+    pub progress: f32,
+    pub speed: f32,
+    pub sprite_idx: usize,
+    pub hover_offset: f32,
+    pub hover_speed: f32,
+}
+
+impl Vehicle {
+    pub fn align_position(&mut self) {
+        let sx = self.tx as f32 + 0.5;
+        let sy = self.ty as f32 + 0.5;
+        let mut ex = self.next_tx as f32 + 0.5;
+        let mut ey = self.next_ty as f32 + 0.5;
+
+        // Shortest path on torus wrapping
+        let mut dx = ex - sx;
+        if dx > MAP_WIDTH as f32 / 2.0 {
+            ex -= MAP_WIDTH as f32;
+            dx = ex - sx;
+        } else if dx < -(MAP_WIDTH as f32 / 2.0) {
+            ex += MAP_WIDTH as f32;
+            dx = ex - sx;
+        }
+
+        let mut dy = ey - sy;
+        if dy > MAP_HEIGHT as f32 / 2.0 {
+            ey -= MAP_HEIGHT as f32;
+            dy = ey - sy;
+        } else if dy < -(MAP_HEIGHT as f32 / 2.0) {
+            ey += MAP_HEIGHT as f32;
+            dy = ey - sy;
+        }
+
+        self.base_x = sx + (ex - sx) * self.progress;
+        self.base_y = sy + (ey - sy) * self.progress;
+
+        // Right-lane offset (vehicles are always compliant rightsiders driving on the road)
+        let len = (dx*dx + dy*dy).sqrt();
+        if len > 0.01 {
+            let ndx = dx / len;
+            let ndy = dy / len;
+            
+            // Left-normal for lane offset
+            let px = -ndy;
+            let py = ndx;
+            
+            // Off-center driving offset for street lanes
+            let offset_dist = 0.28;
+            self.x = self.base_x + px * offset_dist;
+            self.y = self.base_y + py * offset_dist;
+        } else {
+            self.x = self.base_x;
+            self.y = self.base_y;
+        }
+    }
 }
 
 pub struct Citizen {
@@ -380,6 +463,7 @@ pub struct GameState {
     pub menu_timer: f32,
     pub menu_selected_idx: usize,
     pub menu_particles: Vec<MenuParticle>,
+    pub menu_shockwaves: Vec<MenuShockwave>,
     pub menu_title_landed: bool,
     pub menu_star_played: bool,
     pub slogan_chars_played: usize,
@@ -391,9 +475,18 @@ pub struct GameState {
     pub show_leaderboard: bool,
     pub leaderboard_data: Vec<(String, i32)>,
     pub new_rank: Option<usize>,
+    pub offenders_killed_laser: u32,
+    pub offenders_killed_rocket: u32,
+    pub collateral_damage_kills: u32,
+    pub is_showing_summary: bool,
+    pub summary_timer: f32,
+    pub summary_stage: usize,
+    pub summary_count_anim: f32,
+    pub summary_skip_buildup: bool,
     // Guided missile special attack
     pub missiles: Vec<GuidedMissile>,
     pub missile_used: bool,
+    pub vehicles: Vec<Vehicle>,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -451,6 +544,7 @@ impl GameState {
             menu_timer: 0.0,
             menu_selected_idx: 0,
             menu_particles: Vec::new(),
+            menu_shockwaves: Vec::new(),
             menu_title_landed: false,
             menu_star_played: false,
             slogan_chars_played: 0,
@@ -458,12 +552,21 @@ impl GameState {
             is_entering_highscore: false,
             highscore_name: String::new(),
             highscore_input_delay: 0.0,
+            offenders_killed_laser: 0,
+            offenders_killed_rocket: 0,
+            collateral_damage_kills: 0,
+            is_showing_summary: false,
+            summary_timer: 0.0,
+            summary_stage: 0,
+            summary_count_anim: 0.0,
+            summary_skip_buildup: false,
             last_beep_second: 6,
             show_leaderboard: false,
             leaderboard_data: Vec::new(),
             new_rank: None,
             missiles: Vec::new(),
             missile_used: false,
+            vehicles: Vec::new(),
             rng_state: 123456789,
         };
 
@@ -529,6 +632,57 @@ impl GameState {
         } else {
             self.citizens.push(citizen);
         }
+    }
+
+    /// Spawn a hover vehicle at a given road tile
+    pub fn spawn_vehicle_at(&mut self, tx: usize, ty: usize) {
+        let val = next_rng(&mut self.rng_state);
+        
+        // Determine direction based on road type
+        let (dx, dy) = if tx % 7 == 4 && ty % 7 == 4 {
+            // Intersection: pick randomly
+            match val % 4 {
+                0 => (0, 1),
+                1 => (0, -1),
+                2 => (1, 0),
+                _ => (-1, 0),
+            }
+        } else if tx % 7 == 4 {
+            // Vertical road: move north or south
+            if val % 2 == 0 { (0, 1) } else { (0, -1) }
+        } else {
+            // Horizontal road: move east or west
+            if val % 2 == 0 { (1, 0) } else { (-1, 0) }
+        };
+
+        let next_tx = (tx as i32 + dx).rem_euclid(MAP_WIDTH as i32) as usize;
+        let next_ty = (ty as i32 + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+
+        // Speed: hover vehicles should travel faster than walking citizens (0.6 - 1.2)
+        let speed = 1.8 + rng_float(&mut self.rng_state) * 1.4;
+
+        let sprite_idx = if val % 2 == 0 { 17 } else { 18 };
+        let hover_speed = 3.0 + rng_float(&mut self.rng_state) * 2.0;
+
+        let mut vehicle = Vehicle {
+            x: tx as f32 + 0.5,
+            y: ty as f32 + 0.5,
+            base_x: tx as f32 + 0.5,
+            base_y: ty as f32 + 0.5,
+            tx,
+            ty,
+            prev_tx: tx,
+            prev_ty: ty,
+            next_tx,
+            next_ty,
+            progress: 0.0,
+            speed,
+            sprite_idx,
+            hover_offset: rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI,
+            hover_speed,
+        };
+        vehicle.align_position();
+        self.vehicles.push(vehicle);
     }
 
     /// Spawn 3D blood droplets and meat debris
@@ -671,6 +825,12 @@ impl GameState {
             if crate::game::is_game_started() {
                 self.menu_timer += dt;
             }
+            // Update menu shockwaves
+            self.menu_shockwaves.retain_mut(|sw| {
+                sw.lifetime += dt;
+                sw.radius += sw.speed * dt;
+                sw.lifetime < sw.max_lifetime
+            });
         }
 
         // Focus scan window typing animation update
@@ -1065,6 +1225,7 @@ impl GameState {
 
                 let reward = 1000;
                 self.player.credits += reward;
+                self.offenders_killed_rocket += 1;
                 self.screen_shake = (self.screen_shake + 0.1).min(0.3);
 
                 self.floating_texts.push(FloatingText {
@@ -1245,6 +1406,145 @@ impl GameState {
             } else {
                 break;
             }
+        }
+
+        // Despawn vehicles that are too far away or behind the player
+        self.vehicles.retain(|v| {
+            let mut dx = v.x - px;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = v.y - py;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            let dist = (dx*dx + dy*dy).sqrt();
+            if dist > 20.0 {
+                return false;
+            }
+
+            let dot = dx * pdx + dy * pdy;
+            if dot < -4.0 && dist > 3.0 {
+                return false;
+            }
+
+            true
+        });
+
+        // Count visible vehicles in front of the player
+        let mut visible_v_count = 0;
+        for v in &self.vehicles {
+            let mut dx = v.x - px;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = v.y - py;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            let dist = (dx*dx + dy*dy).sqrt();
+            if dist < 16.0 {
+                let dot = dx * pdx + dy * pdy;
+                if dot > 0.0 {
+                    visible_v_count += 1;
+                }
+            }
+        }
+
+        // Spawn vehicles on roads in front of the player
+        let target_visible_v = 10;
+        let mut v_spawn_attempts = 0;
+        while visible_v_count < target_visible_v && v_spawn_attempts < 15 {
+            v_spawn_attempts += 1;
+            let p_tile_x = self.player.tx as i32;
+            let p_tile_y = self.player.ty as i32;
+            let center_x = p_tile_x + (pdx * 8.0) as i32;
+            let center_y = p_tile_y + (pdy * 8.0) as i32;
+
+            let mut candidates = Vec::new();
+            for gx_raw in (center_x - 10)..=(center_x + 10) {
+                for gy_raw in (center_y - 10)..=(center_y + 10) {
+                    let gx = gx_raw.rem_euclid(MAP_WIDTH as i32) as usize;
+                    let gy = gy_raw.rem_euclid(MAP_HEIGHT as i32) as usize;
+                    
+                    if self.map.grid[gx][gy] == TileType::Road {
+                        let mut tdx = gx as f32 + 0.5 - px;
+                        if tdx > MAP_WIDTH as f32 / 2.0 { tdx -= MAP_WIDTH as f32; }
+                        else if tdx < -(MAP_WIDTH as f32 / 2.0) { tdx += MAP_WIDTH as f32; }
+
+                        let mut tdy = gy as f32 + 0.5 - py;
+                        if tdy > MAP_HEIGHT as f32 / 2.0 { tdy -= MAP_HEIGHT as f32; }
+                        else if tdy < -(MAP_HEIGHT as f32 / 2.0) { tdy += MAP_HEIGHT as f32; }
+
+                        let dist = (tdx*tdx + tdy*tdy).sqrt();
+                        if dist >= 5.0 && dist <= 16.0 {
+                            let dot = tdx * pdx + tdy * pdy;
+                            if dot > 0.4 {
+                                let mut occupied = false;
+                                for v in &self.vehicles {
+                                    if (v.tx % MAP_WIDTH == gx && v.ty % MAP_HEIGHT == gy) ||
+                                       (v.next_tx % MAP_WIDTH == gx && v.next_ty % MAP_HEIGHT == gy) {
+                                        occupied = true;
+                                        break;
+                                    }
+                                }
+                                if !occupied {
+                                    candidates.push((gx_raw, gy_raw));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !candidates.is_empty() {
+                let idx = (next_rng(&mut self.rng_state) as usize) % candidates.len();
+                let (sx, sy) = candidates[idx];
+                self.spawn_vehicle_at(sx as usize, sy as usize);
+                visible_v_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        // Update vehicles
+        for i in 0..self.vehicles.len() {
+            let (new_tx, new_ty, new_prev_tx, new_prev_ty, new_next_tx, new_next_ty, new_progress) = {
+                let vehicle = &self.vehicles[i];
+                let progress = vehicle.progress + vehicle.speed * dt;
+                if progress >= 1.0 {
+                    let old_prev_x = vehicle.tx;
+                    let old_prev_y = vehicle.ty;
+                    let tx = vehicle.next_tx;
+                    let ty = vehicle.next_ty;
+
+                    // Continue straight in current direction
+                    let mut dx = tx as i32 - old_prev_x as i32;
+                    if dx > MAP_WIDTH as i32 / 2 { dx -= MAP_WIDTH as i32; }
+                    else if dx < -(MAP_WIDTH as i32 / 2) { dx += MAP_WIDTH as i32; }
+
+                    let mut dy = ty as i32 - old_prev_y as i32;
+                    if dy > MAP_HEIGHT as i32 / 2 { dy -= MAP_HEIGHT as i32; }
+                    else if dy < -(MAP_HEIGHT as i32 / 2) { dy += MAP_HEIGHT as i32; }
+
+                    let next_tx = (tx as i32 + dx).rem_euclid(MAP_WIDTH as i32) as usize;
+                    let next_ty = (ty as i32 + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+
+                    (tx, ty, old_prev_x, old_prev_y, next_tx, next_ty, 0.0)
+                } else {
+                    (vehicle.tx, vehicle.ty, vehicle.prev_tx, vehicle.prev_ty, vehicle.next_tx, vehicle.next_ty, progress)
+                }
+            };
+
+            let vehicle = &mut self.vehicles[i];
+            vehicle.tx = new_tx;
+            vehicle.ty = new_ty;
+            vehicle.prev_tx = new_prev_tx;
+            vehicle.prev_ty = new_prev_ty;
+            vehicle.next_tx = new_next_tx;
+            vehicle.next_ty = new_next_ty;
+            vehicle.progress = new_progress;
+            vehicle.align_position();
         }
 
         // Update citizens
@@ -1471,6 +1771,7 @@ impl GameState {
                             // Correct elimination of criminal
                             let reward = 1000;
                             self.player.credits += reward;
+                            self.offenders_killed_laser += 1;
                             play_sound("explosion");
                             play_sound("cash_earn");
                             
@@ -1491,6 +1792,7 @@ impl GameState {
                             // Collateral Damage! Shot a compliant Rightsider!
                             let penalty = 500;
                             self.player.credits -= penalty;
+                            self.collateral_damage_kills += 1;
                             self.player.damage_flash = 0.2; // Red screenshake glow
                             play_sound("collateral");
 
