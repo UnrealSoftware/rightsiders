@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RIGHTSIDERS - Privacy Policy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --neon-cyan: #00f0ff;
+            --neon-pink: #ff007f;
+            --neon-green: #39ff14;
+            --bg-dark: #0a0b10;
+            --panel-bg: rgba(16, 18, 27, 0.85);
+            --border-glow: 0 0 15px rgba(0, 240, 255, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(255, 0, 127, 0.05) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(0, 240, 255, 0.05) 0px, transparent 50%);
+            color: #e2e8f0;
+            font-family: 'Share Tech Mono', monospace;
+            overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding-top: 80px; /* space for fixed header */
+            padding-bottom: 80px; /* space for fixed footer */
+        }
+
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            border-bottom: 1px solid var(--neon-cyan);
+            background: rgba(10, 11, 16, 0.85);
+            backdrop-filter: blur(8px);
+            padding: 10px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 240, 255, 0.15);
+            z-index: 10;
+        }
+
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo span {
+            color: var(--neon-pink);
+            text-shadow: 0 0 10px rgba(255, 0, 127, 0.5);
+        }
+
+        .status-badge {
+            font-size: 14px;
+            border: 1px solid var(--neon-green);
+            color: var(--neon-green);
+            padding: 4px 12px;
+            border-radius: 4px;
+            background: rgba(57, 255, 20, 0.1);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            animation: pulse 2s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from { box-shadow: 0 0 5px rgba(57, 255, 20, 0.2); }
+            to { box-shadow: 0 0 15px rgba(57, 255, 20, 0.6); }
+        }
+
+        /* CRT Effects Overlay */
+        .crt-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 5;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            opacity: 0.85;
+        }
+
+        .crt-overlay::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: radial-gradient(circle, transparent 60%, rgba(0, 0, 0, 0.4) 100%);
+        }
+
+        .crt-scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(18, 16, 16, 0.1);
+            opacity: 0.15;
+            z-index: 6;
+            pointer-events: none;
+            animation: crt-flicker 0.15s infinite;
+        }
+
+        @keyframes crt-flicker {
+            0% { opacity: 0.15; }
+            50% { opacity: 0.18; }
+            100% { opacity: 0.15; }
+        }
+
+        .container {
+            max-width: 900px;
+            width: 90%;
+            margin: 40px auto;
+            position: relative;
+            z-index: 2;
+        }
+
+        .control-panel {
+            background: var(--panel-bg);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 8px;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: var(--border-glow);
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            color: var(--neon-cyan);
+            border-bottom: 2px solid var(--neon-cyan);
+            padding-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            color: var(--neon-pink);
+            border-bottom: 1px solid rgba(255, 0, 127, 0.3);
+            padding-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 15px;
+            text-shadow: 0 0 8px rgba(255, 0, 127, 0.4);
+        }
+
+        h3 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            color: var(--neon-cyan);
+            letter-spacing: 1px;
+            margin-top: 10px;
+        }
+
+        p, ul {
+            font-size: 15px;
+            line-height: 1.7;
+            color: #94a3b8;
+        }
+
+        ul {
+            padding-left: 20px;
+            list-style-type: square;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        strong {
+            color: #e2e8f0;
+        }
+
+        .highlight-box {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #94a3b8;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 16px;
+            border-left: 4px solid var(--neon-green);
+            border-radius: 0 6px 6px 0;
+            box-shadow: inset 0 0 10px rgba(57, 255, 20, 0.05);
+        }
+
+        .highlight-box strong {
+            color: var(--neon-green);
+        }
+
+        .back-btn {
+            display: inline-block;
+            background: rgba(0, 240, 255, 0.1);
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            padding: 10px 20px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 13px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            transition: all 0.3s ease;
+            width: fit-content;
+            margin-bottom: 20px;
+            box-shadow: 0 0 5px rgba(0, 240, 255, 0.2);
+        }
+
+        .back-btn:hover {
+            background: var(--neon-cyan);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.6);
+            transform: translateY(-2px);
+        }
+
+        footer {
+            position: fixed;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            padding: 6px 16px;
+            font-size: 11px;
+            color: rgba(148, 163, 184, 0.8);
+            background: rgba(10, 11, 16, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5), var(--border-glow);
+            z-index: 30;
+            pointer-events: auto;
+            white-space: nowrap;
+        }
+
+        footer a {
+            color: var(--neon-cyan);
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        footer a:hover {
+            color: var(--neon-pink);
+            text-shadow: 0 0 8px rgba(255, 0, 127, 0.6);
+            text-decoration: underline;
+        }
+
+        .email-obfuscated {
+            color: var(--neon-cyan);
+            text-decoration: none;
+            cursor: pointer;
+            border-bottom: 1px dashed var(--neon-cyan);
+        }
+
+        .email-obfuscated::after {
+            content: " [at] peterschauss.de";
+        }
+    </style>
+</head>
+<body>
+
+    <div class="crt-overlay"></div>
+    <div class="crt-scanlines"></div>
+
+    <header>
+        <div class="logo">
+            RIGHT<span>SIDERS</span> <span style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px;">
+                UNIT KX-128#67 // PRIVACY DIRECTIVE // DSGVO COMPLIANT
+            </span>
+        </div>
+        <div>
+            <div class="status-badge">
+                SECURE CONNECTION
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <a href="index.html" class="back-btn">&lt; Back to Duty</a>
+
+        <div class="control-panel">
+            <h1>Privacy Policy</h1>
+
+            <div class="highlight-box">
+                <strong>GDPR SYSTEM DIRECTIVE:</strong><br>
+                This privacy policy informs you about the nature, scope, and purpose of the processing of personal data within our online services in accordance with the EU General Data Protection Regulation (GDPR).
+            </div>
+
+            <h2>1. Controller</h2>
+            <p>
+                The controller responsible for data processing on this website in accordance with the GDPR is:<br><br>
+                <strong>Peter Schauß</strong><br>
+                Email: <span class="email-obfuscated" onclick="revealAndEmail(this)">peter</span><br>
+                Website: <a href="https://peterschauss.de" target="_blank" style="color: var(--neon-cyan); text-decoration: none;">peterschauss.de</a>
+            </p>
+
+            <h2>2. Data Collection on Our Website</h2>
+            <h3>Server Log Files</h3>
+            <p>
+                The provider of these pages automatically collects and stores information in so-called server log files, which your browser automatically transmits. These are:
+            </p>
+            <ul>
+                <li>Browser type and version</li>
+                <li>Operating system used</li>
+                <li>Referrer URL (the previously visited page)</li>
+                <li>Hostname of the accessing computer</li>
+                <li>Time of the server request</li>
+                <li>IP address (processed in anonymized form)</li>
+            </ul>
+            <p>
+                This data is not merged with other data sources. Processing is carried out in accordance with Art. 6(1)(f) GDPR based on our legitimate interest in improving the stability, functionality, and security of our website.
+            </p>
+
+            <h3>Local Storage (Browser Storage)</h3>
+            <p>
+                This game utilizes your browser's "Local Storage" to save game states and highscores directly on your device. The following key is used:
+            </p>
+            <ul>
+                <li><code>highscore</code>: Stores the player initials and their respective scores.</li>
+            </ul>
+            <p>
+                This data is stored locally on your device and is technically necessary to provide you with the highscore feature (Art. 6(1)(b) and (f) GDPR). <strong>No</strong> transmission of this data to our servers or to third parties takes place. You can delete this data at any time using the Reset function in the game's footer or by clearing your browser's website data.
+            </p>
+
+            <h2>3. Your Rights as a Data Subject</h2>
+            <p>
+                You have the right to:
+            </p>
+            <ul>
+                <li>Request access to your personal data processed by us (Art. 15 GDPR);</li>
+                <li>Request immediate rectification of incorrect or incomplete personal data stored by us (Art. 16 GDPR);</li>
+                <li>Request erasure of your personal data stored by us (Art. 17 GDPR);</li>
+                <li>Request restriction of processing of your personal data (Art. 18 GDPR);</li>
+                <li>Receive your personal data in a structured, commonly used, and machine-readable format (Art. 20 GDPR);</li>
+                <li>Object to the processing of your personal data based on legitimate interests (Art. 21 GDPR);</li>
+                <li>Lodge a complaint with a supervisory authority (Art. 77 GDPR).</li>
+            </ul>
+
+            <h2>4. Data Security</h2>
+            <p>
+                We use the widespread SSL (Secure Socket Layer) method during your website visit, in conjunction with the highest level of encryption supported by your browser. You can tell if a page is transmitted in encrypted form by the lock symbol in your browser's address bar.
+            </p>
+        </div>
+    </div>
+
+    <footer>
+        RIGHTSIDERS // Built with Rust + Macroquad //
+        <a href="index.html">GAME</a> //
+        <a href="https://github.com/UnrealSoftware/rightsiders">GIT</a> //
+        <a href="https://www.unrealsoftware.de/contact.php" target="_blank">CONTACT</a> //
+        <a href="privacy.html">PRIVACY</a>
+    </footer>
+
+    <script>
+        function revealAndEmail(el) {
+            const user = el.innerText || el.textContent;
+            const domain = "peterschauss.de";
+            const email = user + "@" + domain;
+            window.location.href = "mailto:" + email;
+        }
+    </script>
+</body>
+</html>

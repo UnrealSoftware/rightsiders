@@ -475,7 +475,7 @@
     <footer>
         RIGHTSIDERS // Built with Rust + Macroquad //
 		<a href="https://github.com/UnrealSoftware/rightsiders">GIT</a> //
-		<a href="https://www.unrealsoftware.de/contact.php" target="_blank">CONTACT</a> //
+		<a href="privacy.html">PRIVACY</a> //
 		<a href="?reset">RESET</a>
     </footer>
 
@@ -488,8 +488,7 @@
             if (urlParams.has('reset')) {
                 const confirmReset = confirm("Do you want to reset the highscores?");
                 if (confirmReset) {
-                    localStorage.removeItem("rightsiders_highscores_rust");
-                    localStorage.removeItem("rightsiders_highscores");
+                    localStorage.removeItem("highscore");
                 }
                 // Clean up the URL without reloading the page
                 const cleanUrl = window.location.pathname;
@@ -803,22 +802,7 @@
                 };
                 importObject.env.load_scores_js = (ptr, max_len) => {
                     try {
-                        let scoresStr = "";
-                        const data = localStorage.getItem("rightsiders_highscores_rust");
-                        if (data) {
-                            scoresStr = data;
-                        } else {
-                            // Try to migrate from old rightsiders_highscores
-                            const oldData = localStorage.getItem("rightsiders_highscores");
-                            if (oldData) {
-                                try {
-                                    const parsed = JSON.parse(oldData);
-                                    if (Array.isArray(parsed)) {
-                                        scoresStr = parsed.map(item => `${item.name}:${item.score}`).join(",");
-                                    }
-                                } catch(e) {}
-                            }
-                        }
+                        let scoresStr = localStorage.getItem("highscore");
                         if (!scoresStr) {
                             scoresStr = "APX:2500,LAW:2000,KXX:1500,PRM:1000,SEC:800,COP:600,DED:500,BAD:400,OUT:300,AAA:100";
                         }
@@ -838,7 +822,7 @@
                         const view = new Uint8Array(wasm_memory.buffer, ptr, len);
                         const decoder = new TextDecoder();
                         const scoresStr = decoder.decode(view);
-                        localStorage.setItem("rightsiders_highscores_rust", scoresStr);
+                        localStorage.setItem("highscore", scoresStr);
                     } catch (e) {
                         console.error("save_scores_js error:", e);
                     }
