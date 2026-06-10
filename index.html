@@ -1849,6 +1849,64 @@
                 noise.start(now);
                 noise.stop(now + 0.35);
             }
+            else if (type === 'driveby') {
+                // Doppler-like pitch sweep (low -> high -> low)
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                
+                const duration = 0.45;
+                const mid = now + duration * 0.4;
+                
+                osc.frequency.setValueAtTime(140, now);
+                osc.frequency.linearRampToValueAtTime(320, mid);
+                osc.frequency.exponentialRampToValueAtTime(80, now + duration);
+                
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.18, mid);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(600, now);
+                filter.frequency.linearRampToValueAtTime(1200, mid);
+                filter.frequency.exponentialRampToValueAtTime(300, now + duration);
+                
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start(now);
+                osc.stop(now + duration);
+                
+                // Add noise rumble for jet/hover engine breeze
+                const bufferSize = audioCtx.sampleRate * duration;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2.0 - 1.0;
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+                
+                const noiseFilter = audioCtx.createBiquadFilter();
+                noiseFilter.type = 'bandpass';
+                noiseFilter.frequency.setValueAtTime(250, now);
+                noiseFilter.frequency.linearRampToValueAtTime(500, mid);
+                noiseFilter.frequency.exponentialRampToValueAtTime(120, now + duration);
+                
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.01, now);
+                noiseGain.gain.linearRampToValueAtTime(0.12, mid);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                
+                noise.connect(noiseFilter);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                
+                noise.start(now);
+                noise.stop(now + duration);
+            }
         }
 
         function startMusic() {

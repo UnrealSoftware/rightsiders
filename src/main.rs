@@ -931,7 +931,7 @@ async fn main() {
         for (idx, citizen) in state.citizens.iter().enumerate() {
             let is_targeted = state.player.target_idx == Some(idx);
             let target_color = if is_targeted {
-                if citizen.is_leftsider {
+                if citizen.is_visually_leftsider() {
                     0xff007fff // Neon Pink
                 } else {
                     0x39ff14ff // Neon Green
@@ -960,9 +960,9 @@ async fn main() {
                     let seen_from_back = dot > 0.0;
 
                     let frame_base = if seen_from_back {
-                        if citizen.is_leftsider { 9 } else { 7 }
+                        if citizen.is_visually_leftsider() { 9 } else { 7 }
                     } else {
-                        if citizen.is_leftsider { 2 } else { 0 }
+                        if citizen.is_visually_leftsider() { 2 } else { 0 }
                     };
                     frame_base + citizen.walk_frame
                 }
@@ -1726,7 +1726,7 @@ async fn main() {
             let reticle_color = if target_found {
                 let target = &state.citizens[state.player.target_idx.unwrap()];
                 // Red for Leftsiders/rebels, green for compliant
-                if target.is_leftsider {
+                if target.is_visually_leftsider() {
                     Color::from_rgba(255, 0, 127, 200) // Neon Pink (Criminal)
                 } else {
                     Color::from_rgba(57, 255, 20, 200)  // Neon Green (Compliant)
@@ -1801,7 +1801,7 @@ async fn main() {
             // Biometric Scanner Window (Top-Left)
             if target_found {
                 let target = &state.citizens[state.player.target_idx.unwrap()];
-                let is_criminal = target.is_leftsider;
+                let is_criminal = target.is_visually_leftsider();
                 let hud_theme = if is_criminal {
                     if (get_time() * 4.0) as i32 % 2 == 0 {
                         Color::from_rgba(255, 0, 127, 220) // Red/pink theme

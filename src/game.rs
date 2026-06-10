@@ -231,6 +231,7 @@ pub struct Vehicle {
     pub sprite_idx: usize,
     pub hover_offset: f32,
     pub hover_speed: f32,
+    pub has_played_driveby: bool,
 }
 
 impl Vehicle {
@@ -297,6 +298,7 @@ pub struct Citizen {
     pub progress: f32,
     pub speed: f32,
     pub is_leftsider: bool, // Offsets left (criminal) or right (compliant)
+    pub lane_offset: f32,
     pub health: f32,
     pub state: CitizenState,
     pub shoot_cooldown: f32,
@@ -306,6 +308,10 @@ pub struct Citizen {
 }
 
 impl Citizen {
+    pub fn is_visually_leftsider(&self) -> bool {
+        self.lane_offset < 0.0
+    }
+
     pub fn align_position(&mut self) {
         // Linear path interpolation
         let sx = self.tx as f32 + 0.5;
@@ -346,12 +352,11 @@ impl Citizen {
             let px = -ndy;
             let py = ndx;
 
-            let offset_dist = 0.22;
-            let mult = if self.is_leftsider { -offset_dist } else { offset_dist };
+            let mult = self.lane_offset;
 
             // Right-normal for passing offset
-            let rx = ndy;
-            let ry = -ndx;
+            let rx = -ndy;
+            let ry = ndx;
             let passing_offset = 0.07;
 
             self.x = self.base_x + px * mult + rx * passing_offset;
@@ -720,6 +725,7 @@ impl GameState {
             progress: 0.0,
             speed,
             is_leftsider,
+            lane_offset: if is_leftsider { -0.22 } else { 0.22 },
             health: 100.0,
             state: CitizenState::Walking,
             shoot_cooldown: 0.5 + rng_float(&mut self.rng_state) * 1.5,
@@ -784,6 +790,7 @@ impl GameState {
             sprite_idx,
             hover_offset: rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI,
             hover_speed,
+            has_played_driveby: false,
         };
         vehicle.align_position();
         self.vehicles.push(vehicle);
@@ -855,7 +862,7 @@ impl GameState {
         // Collect visible leftsider targets
         let mut targets: Vec<(usize, f32, f32)> = Vec::new();
         for (idx, citizen) in self.citizens.iter().enumerate() {
-            if citizen.state != CitizenState::Walking || !citizen.is_leftsider {
+            if citizen.state != CitizenState::Walking || !citizen.is_visually_leftsider() {
                 continue;
             }
             let mut dx = citizen.x - px;
@@ -1301,7 +1308,7 @@ impl GameState {
                     // Schedule kill
                     if let Some(cidx) = self.citizens.iter().position(|c| c.id_num == missile.target_id) {
                         let c = &self.citizens[cidx];
-                        if c.state == CitizenState::Walking && c.is_leftsider {
+                        if c.state == CitizenState::Walking && c.is_visually_leftsider() {
                             kills.push((cidx, c.x, c.y));
                         }
                     }
@@ -1319,7 +1326,7 @@ impl GameState {
             for (cidx, kx, ky) in kills {
                 if cidx >= self.citizens.len() { continue; }
                 if self.citizens[cidx].state != CitizenState::Walking { continue; }
-                if !self.citizens[cidx].is_leftsider { continue; }
+                if !self.citizens[cidx].is_visually_leftsider() { continue; }
 
                 self.citizens[cidx].state = CitizenState::Exploding(0.0);
                 self.citizens[cidx].shoot_cooldown = 0.0;
@@ -1615,7 +1622,42 @@ impl GameState {
         for i in 0..self.vehicles.len() {
             let (new_tx, new_ty, new_prev_tx, new_prev_ty, new_next_tx, new_next_ty, new_progress) = {
                 let vehicle = &self.vehicles[i];
-                let progress = vehicle.progress + vehicle.speed * dt;
+                
+                // Determine if vehicle is moving in the same direction as the player
+                let is_same_direction = {
+                    let mut pdx = self.player.next_tx as f32 - self.player.tx as f32;
+                    if pdx > MAP_WIDTH as f32 / 2.0 { pdx -= MAP_WIDTH as f32; }
+                    else if pdx < -(MAP_WIDTH as f32 / 2.0) { pdx += MAP_WIDTH as f32; }
+
+                    let mut pdy = self.player.next_ty as f32 - self.player.ty as f32;
+                    if pdy > MAP_HEIGHT as f32 / 2.0 { pdy -= MAP_HEIGHT as f32; }
+                    else if pdy < -(MAP_HEIGHT as f32 / 2.0) { pdy += MAP_HEIGHT as f32; }
+
+                    let mut vdx = vehicle.next_tx as f32 - vehicle.tx as f32;
+                    if vdx > MAP_WIDTH as f32 / 2.0 { vdx -= MAP_WIDTH as f32; }
+                    else if vdx < -(MAP_WIDTH as f32 / 2.0) { vdx += MAP_WIDTH as f32; }
+
+                    let mut vdy = vehicle.next_ty as f32 - vehicle.ty as f32;
+                    if vdy > MAP_HEIGHT as f32 / 2.0 { vdy -= MAP_HEIGHT as f32; }
+                    else if vdy < -(MAP_HEIGHT as f32 / 2.0) { vdy += MAP_HEIGHT as f32; }
+
+                    let p_len = (pdx*pdx + pdy*pdy).sqrt();
+                    let v_len = (vdx*vdx + vdy*vdy).sqrt();
+                    if p_len > 0.01 && v_len > 0.01 {
+                        let dot = (pdx / p_len) * (vdx / v_len) + (pdy / p_len) * (vdy / v_len);
+                        dot > 0.9
+                    } else {
+                        false
+                    }
+                };
+
+                let speed_mult = if is_same_direction { 2.5 } else { 1.0 };
+                let mut current_speed = vehicle.speed * speed_mult;
+                if is_same_direction && current_speed < self.player.speed * 2.0 {
+                    current_speed = self.player.speed * 2.0;
+                }
+                let progress = vehicle.progress + current_speed * dt;
+                
                 if progress >= 1.0 {
                     let old_prev_x = vehicle.tx;
                     let old_prev_y = vehicle.ty;
@@ -1649,6 +1691,25 @@ impl GameState {
             vehicle.next_ty = new_next_ty;
             vehicle.progress = new_progress;
             vehicle.align_position();
+
+            // Drive-by sound trigger logic
+            let mut dx = vehicle.x - self.player.x;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = vehicle.y - self.player.y;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < 2.0 {
+                if !vehicle.has_played_driveby {
+                    vehicle.has_played_driveby = true;
+                    play_sound("driveby");
+                }
+            } else if dist > 4.5 {
+                vehicle.has_played_driveby = false;
+            }
         }
 
         // Update citizens
@@ -1697,6 +1758,11 @@ impl GameState {
                             citizen.is_leftsider = !citizen.is_leftsider;
                         }
                     }
+                    
+                    // Smoothly interpolate lane_offset towards target_offset
+                    let target_offset = if citizen.is_leftsider { -0.22 } else { 0.22 };
+                    citizen.lane_offset += (target_offset - citizen.lane_offset) * 8.0 * dt;
+
                     citizen.walk_frame = if (citizen.progress * 4.0) as i32 % 2 == 0 { 0 } else { 1 };
                     citizen.align_position();
                 }
@@ -1863,7 +1929,7 @@ impl GameState {
                         ty = target.y;
 
                         // Check compliance for reward/penalty
-                        let is_lefty = target.is_leftsider;
+                        let is_lefty = target.is_visually_leftsider();
 
                         if is_lefty {
                             // Correct elimination of criminal
