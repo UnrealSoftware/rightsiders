@@ -553,9 +553,104 @@
             color: var(--neon-pink);
             text-shadow: 0 0 5px rgba(255, 0, 127, 0.5);
         }
+
+        /* Media query to hide header, footer, help controls on mobile */
+        @media (max-width: 768px), (pointer: coarse) {
+            header, footer, #toggle-help, #help-overlay, #toggle-fullscreen {
+                display: none !important;
+            }
+        }
+
+        /* Portrait mode rotate device overlay */
+        @keyframes curve-arrow-pulse {
+            0% {
+                transform: rotate(0deg) scale(1);
+                opacity: 0.8;
+            }
+            50% {
+                transform: rotate(15deg) scale(1.15);
+                opacity: 1;
+            }
+            100% {
+                transform: rotate(0deg) scale(1);
+                opacity: 0.8;
+            }
+        }
+        .curved-arrow-anim {
+            animation: curve-arrow-pulse 1.5s ease-in-out infinite;
+        }
+
+        /* Mobile Highscore Input Overlay styling */
+        .mobile-highscore-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(10, 11, 16, 0.95);
+            z-index: 100001;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+        }
+        .mobile-highscore-input {
+            background: rgba(10, 15, 25, 0.98);
+            border: 2px solid var(--neon-cyan);
+            border-radius: 4px;
+            color: #fff;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 32px;
+            text-align: center;
+            width: 150px;
+            padding: 10px;
+            outline: none;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.3);
+            text-transform: uppercase;
+        }
+        .mobile-highscore-submit {
+            padding: 12px 14px;
+            background: rgba(57, 255, 20, 0.04);
+            border: 1px solid rgba(57, 255, 20, 0.35);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-size: 13px;
+            text-align: center;
+            color: var(--neon-green);
+            font-weight: bold;
+            box-shadow: 0 0 8px rgba(57, 255, 20, 0.1);
+        }
+        .mobile-highscore-submit:hover {
+            background: rgba(57, 255, 20, 0.18);
+            border-color: var(--neon-green);
+            box-shadow: 0 0 15px rgba(57, 255, 20, 0.45);
+            color: #fff;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
     </style>
 </head>
 <body>
+
+    <!-- Portrait mode turn device overlay -->
+    <div id="portrait-turn-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0a0b10; z-index: 100000; flex-direction: column; justify-content: center; align-items: center; gap: 20px; color: var(--neon-pink);">
+        <svg class="curved-arrow-anim" width="100" height="100" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" style="color: var(--neon-pink); filter: drop-shadow(0 0 8px rgba(255, 0, 127, 0.6));">
+            <path d="M 20 80 C 20 30, 80 30, 80 70" />
+            <polyline points="70,60 80,70 90,60" />
+        </svg>
+        <div style="font-family: 'Orbitron', sans-serif; font-size: 24px; font-weight: 900; letter-spacing: 3px; text-shadow: 0 0 10px rgba(255, 0, 127, 0.6); text-transform: uppercase;">TURN</div>
+        <div style="font-family: 'Share Tech Mono', monospace; font-size: 14px; color: #64748b; text-align: center; max-width: 80%; line-height: 1.5;">PLEASE ROTATE YOUR DEVICE TO LANDSCAPE MODE</div>
+    </div>
+
+    <!-- Mobile Highscore Name Entry Overlay -->
+    <div id="mobile-highscore-overlay" class="mobile-highscore-overlay">
+        <h3 style="color: var(--neon-cyan); font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: 900; letter-spacing: 2px; text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);">ENTER INITIALS</h3>
+        <input type="text" id="mobile-highscore-input" class="mobile-highscore-input" maxlength="3" placeholder="AAA" autocomplete="off" spellcheck="false">
+        <button id="mobile-highscore-submit" class="mobile-highscore-submit" style="width: 180px;">TRANSMIT DATA</button>
+    </div>
 
     <!-- Music Selector Modal -->
     <div id="music-modal-overlay" class="music-modal-overlay"></div>
@@ -662,6 +757,34 @@
 
         let menuActive = true; // Starts in main menu
         let enteringHighscore = false; // Set to true when player is entering name initials
+        let mobileHighscoreName = "";
+        let mobileHighscoreSubmitted = false;
+        let gameStarted = false;
+
+        function isMobileDevice() {
+            return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        }
+
+        // JS Touch control variables
+        let jsSwitchLaneLeft = false;
+        let jsSwitchLaneRight = false;
+        let jsTriggerFire = false;
+        let jsTriggerMissile = false;
+
+        let touchStartX = null;
+        let touchStartY = null;
+        let touchSwipeTriggered = false;
+
+        function checkOrientation() {
+            const overlay = document.getElementById("portrait-turn-overlay");
+            if (!overlay) return;
+            const isPortrait = window.innerHeight > window.innerWidth;
+            if (gameStarted && menuActive && isPortrait) {
+                overlay.style.display = "flex";
+            } else {
+                overlay.style.display = "none";
+            }
+        }
         let startupJingle = new Audio('src/assets/rightsiders_startup.ogg');
         startupJingle.volume = 0.75;
         // Set when WASM calls set_menu_active(true) before the user has clicked
@@ -676,12 +799,152 @@
             }
 
             // Re-focus and initialize/resume Web Audio on first user interaction
-            const initAndFocus = () => {
+            const initAndFocus = (e) => {
+                if (enteringHighscore) return; // Ignore focus stealing when entering highscore
                 if (canvas) canvas.focus();
                 initAudio();
             };
             document.body.addEventListener('click', initAndFocus);
             document.body.addEventListener('keydown', initAndFocus);
+
+            window.addEventListener("resize", checkOrientation);
+            window.addEventListener("orientationchange", checkOrientation);
+            checkOrientation();
+
+            // Mobile initials input sync
+            const mobileInput = document.getElementById("mobile-highscore-input");
+            const mobileSubmit = document.getElementById("mobile-highscore-submit");
+            const mobileOverlay = document.getElementById("mobile-highscore-overlay");
+
+            if (mobileOverlay) {
+                mobileOverlay.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                });
+                mobileOverlay.addEventListener("touchstart", (e) => {
+                    e.stopPropagation();
+                }, { passive: true });
+            }
+
+            if (mobileInput) {
+                mobileInput.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    mobileInput.focus();
+                });
+                mobileInput.addEventListener("touchstart", (e) => {
+                    e.stopPropagation();
+                    mobileInput.focus();
+                }, { passive: true });
+
+                mobileInput.addEventListener("input", (e) => {
+                    mobileHighscoreName = e.target.value.trim().substring(0, 3).toUpperCase();
+                });
+                mobileInput.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter" && mobileHighscoreName.length === 3) {
+                        e.preventDefault();
+                        mobileHighscoreSubmitted = true;
+                        if (mobileOverlay) mobileOverlay.style.display = "none";
+                    }
+                });
+            }
+
+            if (mobileSubmit) {
+                mobileSubmit.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    if (mobileHighscoreName.length === 3) {
+                        mobileHighscoreSubmitted = true;
+                        if (mobileOverlay) mobileOverlay.style.display = "none";
+                    }
+                });
+                mobileSubmit.addEventListener("touchstart", (e) => {
+                    e.stopPropagation();
+                    if (mobileHighscoreName.length === 3) {
+                        mobileHighscoreSubmitted = true;
+                        if (mobileOverlay) mobileOverlay.style.display = "none";
+                    }
+                }, { passive: true });
+            }
+
+            // Canvas touch listeners for mobile gameplay inputs
+            let touchStartRocket = false;
+
+            if (canvas) {
+                canvas.addEventListener("touchstart", (e) => {
+                    if (menuActive || enteringHighscore) return;
+
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        const touch = e.changedTouches[i];
+                        const rect = canvas.getBoundingClientRect();
+                        const tx = touch.clientX - rect.left;
+                        const ty = touch.clientY - rect.top;
+
+                        const screen_w = canvas.clientWidth;
+                        const screen_h = canvas.clientHeight;
+                        const ui_scale = Math.max(screen_w / 800.0, screen_h / 600.0, 1.0) * 1.5;
+                        const font_value_size = 8.0 * ui_scale;
+                        
+                        const panel_h = 22.4 * ui_scale;
+                        const px = 15.0 * ui_scale;
+                        const py = screen_h - panel_h - 15.0 * ui_scale;
+                        const rx = px + 4.0 * ui_scale;
+                        const ry = py - 6.0 * ui_scale;
+                        const rocket_w = 8 * (font_value_size * 1.1);
+                        const rocket_h = font_value_size * 1.1;
+
+                        const rxMin = rx - 20 * ui_scale;
+                        const rxMax = rx + rocket_w + 20 * ui_scale;
+                        const ryMin = ry - rocket_h - 20 * ui_scale;
+                        const ryMax = ry + 20 * ui_scale;
+
+                        touchStartRocket = tx >= rxMin && tx <= rxMax && ty >= ryMin && ty <= ryMax;
+
+                        touchStartX = tx;
+                        touchStartY = ty;
+                        touchSwipeTriggered = false;
+                    }
+                }, { passive: true });
+
+                canvas.addEventListener("touchmove", (e) => {
+                    if (menuActive || enteringHighscore) return;
+                    if (touchStartX === null || touchSwipeTriggered) return;
+
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        const touch = e.changedTouches[i];
+                        const rect = canvas.getBoundingClientRect();
+                        const tx = touch.clientX - rect.left;
+                        const ty = touch.clientY - rect.top;
+
+                        const dx = tx - touchStartX;
+                        const screen_w = canvas.clientWidth;
+                        const screen_h = canvas.clientHeight;
+                        const ui_scale = Math.max(screen_w / 800.0, screen_h / 600.0, 1.0) * 1.5;
+                        const swipe_threshold = 40 * Math.max(ui_scale / 1.5, 1.0);
+
+                        if (dx > swipe_threshold) {
+                            jsSwitchLaneRight = true;
+                            touchSwipeTriggered = true;
+                        } else if (dx < -swipe_threshold) {
+                            jsSwitchLaneLeft = true;
+                            touchSwipeTriggered = true;
+                        }
+                    }
+                }, { passive: true });
+
+                canvas.addEventListener("touchend", (e) => {
+                    if (menuActive || enteringHighscore) return;
+
+                    if (!touchSwipeTriggered && touchStartX !== null) {
+                        if (touchStartRocket) {
+                            jsTriggerMissile = true;
+                        } else {
+                            jsTriggerFire = true;
+                        }
+                    }
+
+                    touchStartX = null;
+                    touchStartY = null;
+                    touchSwipeTriggered = false;
+                }, { passive: true });
+            }
 
             // Handle controls panel toggle
             const toggleBtn = document.getElementById("toggle-help");
@@ -865,6 +1128,16 @@
                 startBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
 
+                    // Automatically switch to fullscreen on mobile devices when starting
+                    const isMobile = isMobileDevice();
+                    if (isMobile) {
+                        if (!document.fullscreenElement) {
+                            document.documentElement.requestFullscreen().catch((err) => {
+                                console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                            });
+                        }
+                    }
+
                     // Initialize audio playlist
                     gameStarted = true;
                     initAudio();
@@ -882,6 +1155,8 @@
                     if (canvas) {
                         canvas.focus();
                     }
+
+                    checkOrientation();
 
                     // Fade out loader
                     const loader = document.getElementById("loading");
@@ -902,7 +1177,6 @@
         let audioCtx = null;
         let currentAudio = null;
         let currentTrackIndex = -1;
-        let gameStarted = false;
         const tracks = [
             'src/assets/apex_prime.mp3',
             'src/assets/lane_enforcer.mp3',
@@ -974,24 +1248,84 @@
                         startupJingle.pause();
                         startupJingle.currentTime = 0;
                     }
+                    checkOrientation();
                 };
                 importObject.env.set_entering_highscore_js = (entering) => {
                     enteringHighscore = entering ? true : false;
                     const helpOverlay = document.getElementById("help-overlay");
                     const toggleHelpBtn = document.getElementById("toggle-help");
                     const toggleFSBtn = document.getElementById("toggle-fullscreen");
+                    const mobileOverlay = document.getElementById("mobile-highscore-overlay");
+                    const mobileInput = document.getElementById("mobile-highscore-input");
                     
                     if (enteringHighscore) {
                         if (helpOverlay) helpOverlay.classList.remove("open");
                         if (toggleHelpBtn) toggleHelpBtn.style.display = "none";
                         if (toggleFSBtn) toggleFSBtn.style.display = "none";
+
+                        // Check if we are on a mobile/touch device
+                        const isMobile = isMobileDevice();
+                        if (isMobile && mobileOverlay && mobileInput) {
+                            mobileHighscoreName = "";
+                            mobileHighscoreSubmitted = false;
+                            mobileInput.value = "";
+                            mobileOverlay.style.display = "flex";
+                            setTimeout(() => {
+                                mobileInput.focus();
+                            }, 100);
+                        }
                     } else {
                         if (toggleHelpBtn) toggleHelpBtn.style.display = "block";
                         if (toggleFSBtn) toggleFSBtn.style.display = "block";
                         if (menuActive && helpOverlay) {
                             helpOverlay.classList.add("open");
                         }
+                        if (mobileOverlay) {
+                            mobileOverlay.style.display = "none";
+                        }
                     }
+                };
+                importObject.env.get_mobile_highscore_name_js = (ptr, max_len) => {
+                    try {
+                        const encoder = new TextEncoder();
+                        const bytes = encoder.encode(mobileHighscoreName);
+                        const len = Math.min(bytes.length, max_len);
+                        const view = new Uint8Array(wasm_memory.buffer, ptr, len);
+                        view.set(bytes.subarray(0, len));
+                        return len;
+                    } catch (e) {
+                        console.error("get_mobile_highscore_name_js error:", e);
+                        return 0;
+                    }
+                };
+                importObject.env.is_mobile_highscore_submitted_js = () => {
+                    return mobileHighscoreSubmitted;
+                };
+                importObject.env.clear_mobile_highscore_submit_js = () => {
+                    mobileHighscoreSubmitted = false;
+                };
+                importObject.env.is_mobile_js = () => {
+                    return isMobileDevice();
+                };
+                importObject.env.js_get_switch_lane_left_js = () => {
+                    const val = jsSwitchLaneLeft;
+                    jsSwitchLaneLeft = false;
+                    return val;
+                };
+                importObject.env.js_get_switch_lane_right_js = () => {
+                    const val = jsSwitchLaneRight;
+                    jsSwitchLaneRight = false;
+                    return val;
+                };
+                importObject.env.js_get_trigger_fire_js = () => {
+                    const val = jsTriggerFire;
+                    jsTriggerFire = false;
+                    return val;
+                };
+                importObject.env.js_get_trigger_missile_js = () => {
+                    const val = jsTriggerMissile;
+                    jsTriggerMissile = false;
+                    return val;
                 };
                 importObject.env.report_game_over_js = (score) => {
                     // Deprecated/noop

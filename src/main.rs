@@ -289,7 +289,10 @@ async fn main() {
         let mut switch_lane_right = false;
 
         if state.show_leaderboard {
-            if is_key_pressed(KeyCode::R) || is_mouse_button_pressed(MouseButton::Left) {
+            let trigger = is_key_pressed(KeyCode::R) || 
+                          is_mouse_button_pressed(MouseButton::Left) || 
+                          (game::is_mobile() && game::js_get_trigger_fire());
+            if trigger {
                 if is_game_over || is_bankrupt {
                     state = GameState::new();
                     is_game_over = false;
@@ -312,7 +315,8 @@ async fn main() {
             // Summary Screen Input - block click and R/Space/Enter interactions for 0.5 seconds
             if state.summary_timer >= 0.5 {
                 let trigger = is_key_pressed(KeyCode::R) || is_key_pressed(KeyCode::Space) || 
-                              is_key_pressed(KeyCode::Enter) || is_mouse_button_pressed(MouseButton::Left);
+                              is_key_pressed(KeyCode::Enter) || is_mouse_button_pressed(MouseButton::Left) ||
+                              (game::is_mobile() && game::js_get_trigger_fire());
                 if trigger {
                     if state.summary_stage < 4 {
                         state.summary_skip_buildup = true;
@@ -427,12 +431,56 @@ async fn main() {
                     }
                 }
             } else {
-                // A / D to switch lane
-                if is_key_pressed(KeyCode::A) {
-                    switch_lane_left = true;
-                }
-                if is_key_pressed(KeyCode::D) {
-                    switch_lane_right = true;
+                if game::is_mobile() {
+                    // Mobile controls via JS touch listeners
+                    if game::js_get_switch_lane_left() {
+                        switch_lane_left = true;
+                    }
+                    if game::js_get_switch_lane_right() {
+                        switch_lane_right = true;
+                    }
+                    if game::js_get_trigger_fire() {
+                        state.trigger_fire();
+                    }
+                    if game::js_get_trigger_missile() {
+                        state.trigger_missile_salvo();
+                    }
+                } else {
+                    // Desktop keyboard controls
+                    if is_key_pressed(KeyCode::A) {
+                        switch_lane_left = true;
+                    }
+                    if is_key_pressed(KeyCode::D) {
+                        switch_lane_right = true;
+                    }
+
+                    // Desktop mouse click controls
+                    if is_mouse_button_pressed(MouseButton::Left) {
+                        let font_value_size = 8.0 * ui_scale;
+                        let val_str = format!("{} CR", state.player.credits);
+                        let val_dim = measure_text(&val_str, Some(&font), (font_value_size * 1.3) as u16, 1.0);
+                        let panel_h = (val_dim.height + 12.0 * ui_scale).round();
+                        
+                        let px_val = (view_x + 15.0 * ui_scale).round();
+                        let py_val = (view_y + view_h - panel_h - 15.0 * ui_scale).round();
+
+                        let rx_val = px_val + 4.0 * ui_scale;
+                        let ry_val = py_val - 6.0 * ui_scale;
+                        let rocket_dim = measure_text("[R]OCKET", Some(&font), (font_value_size * 1.1) as u16, 1.0);
+
+                        let (mx, my) = mouse_position();
+                        let rocket_touched = !state.missile_used
+                            && mx >= (rx_val - 15.0 * ui_scale)
+                            && mx <= (rx_val + rocket_dim.width + 15.0 * ui_scale)
+                            && my >= (ry_val - rocket_dim.height - 15.0 * ui_scale)
+                            && my <= (ry_val + 15.0 * ui_scale);
+
+                        if rocket_touched {
+                            state.trigger_missile_salvo();
+                        } else {
+                            state.trigger_fire();
+                        }
+                    }
                 }
 
                 // Calculate speed multiplier based on elapsed time (start at 0, scale to 1 in 1s, then linearly to 2.5x by 30s)
@@ -542,10 +590,10 @@ async fn main() {
                             };
 
                             if target_val != 0.0 {
-                                let panel_w = (440.0 * ui_scale).min(view_w - 30.0 * ui_scale);
-                                let panel_h = (220.0 * ui_scale).min(view_h - 60.0 * ui_scale);
-                                let panel_x = cx - panel_w / 2.0;
-                                let panel_y = view_y + (view_h - panel_h) / 2.0 - 20.0 * ui_scale;
+                                 let panel_w = (440.0 * ui_scale).min(view_w - 30.0 * ui_scale);
+                                 let panel_h = 180.0 * ui_scale;
+                                 let panel_x = cx - panel_w / 2.0;
+                                 let panel_y = (view_y + (view_h - panel_h) / 2.0 - 15.0 * ui_scale).max(5.0 * ui_scale);
                                 let credit_x = panel_x + panel_w - 30.0 * ui_scale;
                                 let start_y = panel_y + 75.0 * ui_scale;
                                 let row_gap = 25.0 * ui_scale;
@@ -662,7 +710,11 @@ async fn main() {
                 } else {
                     if is_bankrupt {
                         // Skip name input, press R to continue
-                        if is_key_pressed(KeyCode::R) {
+                        let trigger_confirm = is_key_pressed(KeyCode::R) || 
+                            (touches().is_empty() == false) ||
+                            is_mouse_button_pressed(MouseButton::Left) ||
+                            (game::is_mobile() && game::js_get_trigger_fire());
+                        if trigger_confirm {
                             state.leaderboard_data = state.load_leaderboard_rust();
                             state.new_rank = None;
                             state.is_entering_highscore = false;
@@ -671,6 +723,21 @@ async fn main() {
                             game::play_sound("rank_fail");
                         }
                     } else {
+                        // Poll mobile highscore initials from JS
+                        let mut mobile_name_buf = [0u8; 16];
+                        let mobile_name_len = game::get_mobile_highscore_name(&mut mobile_name_buf);
+                        if mobile_name_len > 0 {
+                            if let Ok(name_str) = std::str::from_utf8(&mobile_name_buf[..mobile_name_len]) {
+                                state.highscore_name = name_str.trim().to_ascii_uppercase();
+                            }
+                        }
+
+                        // Check if mobile submit was triggered
+                        let mobile_submit = game::is_mobile_highscore_submitted();
+                        if mobile_submit {
+                            game::clear_mobile_highscore_submit();
+                        }
+
                         while let Some(c) = get_char_pressed() {
                             if c.is_ascii_alphabetic() && state.highscore_name.len() < 3 {
                                 state.highscore_name.push(c.to_ascii_uppercase());
@@ -681,7 +748,9 @@ async fn main() {
                             state.highscore_name.pop();
                             game::play_sound("laser");
                         }
-                        if is_key_pressed(KeyCode::R) && state.highscore_name.len() == 3 {
+
+                        let submit_triggered = (is_key_pressed(KeyCode::R) && state.highscore_name.len() == 3) || (mobile_submit && state.highscore_name.len() == 3);
+                        if submit_triggered {
                             state.save_highscore_rust(&state.highscore_name, state.player.credits);
                             state.leaderboard_data = state.load_leaderboard_rust();
                             state.new_rank = None;
@@ -1956,9 +2025,9 @@ async fn main() {
                 draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 220));
 
                 let panel_w = (440.0 * ui_scale).min(view_w - 30.0 * ui_scale);
-                let panel_h = (220.0 * ui_scale).min(view_h - 60.0 * ui_scale);
+                let panel_h = 180.0 * ui_scale;
                 let panel_x = cx - panel_w / 2.0;
-                let panel_y = view_y + (view_h - panel_h) / 2.0 - 20.0 * ui_scale;
+                let panel_y = (view_y + (view_h - panel_h) / 2.0 - 15.0 * ui_scale).max(5.0 * ui_scale);
 
                 // Border and background of the debrief panel
                 draw_rectangle(panel_x, panel_y, panel_w, panel_h, Color::from_rgba(15, 20, 30, 240));
@@ -2091,15 +2160,23 @@ async fn main() {
                 }
 
                 // Help/Continue prompt at bottom
-                let prompt_y = panel_y + panel_h - 25.0 * ui_scale;
+                let prompt_y = panel_y + panel_h + 15.0 * ui_scale;
                 if stage < 4 && !state.summary_skip_buildup {
-                    let prompt_text = "[ CLICK OR PRESS R TO SKIP ]";
+                    let prompt_text = if game::is_mobile() {
+                        "[ TAP TO SKIP ]"
+                    } else {
+                        "[ CLICK OR PRESS R TO SKIP ]"
+                    };
                     let prompt_dim = measure_text(prompt_text, Some(&font), size_sub as u16, 1.0);
                     // Blinking gray
                     let alpha = ( (get_time() * 5.0).sin().abs() * 120.0 + 80.0 ) as u8;
                     draw_pixel_text(prompt_text, cx - prompt_dim.width / 2.0, prompt_y, size_sub, Color::from_rgba(100, 115, 130, alpha), &font);
                 } else {
-                    let prompt_text = "[ CLICK OR PRESS R TO CONTINUE ]";
+                    let prompt_text = if game::is_mobile() {
+                        "[ TAP TO CONTINUE ]"
+                    } else {
+                        "[ CLICK OR PRESS R TO CONTINUE ]"
+                    };
                     let prompt_dim = measure_text(prompt_text, Some(&font), size_sub as u16, 1.0);
                     // Blinking green
                     let alpha = ( (get_time() * 8.0).sin().abs() * 155.0 + 100.0 ) as u8;
@@ -2188,7 +2265,11 @@ async fn main() {
                     
                     if state.highscore_input_delay <= 0.0 {
                         if is_bankrupt {
-                            let t_confirm = "PRESS 'R' TO CONTINUE";
+                            let t_confirm = if game::is_mobile() {
+                                "TAP TO CONTINUE"
+                            } else {
+                                "PRESS 'R' TO CONTINUE"
+                            };
                             let size_confirm = 9.0 * ui_scale;
                             let dim_confirm = measure_text(t_confirm, Some(&font), size_confirm as u16, 1.0);
                             let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75;
@@ -2252,7 +2333,11 @@ async fn main() {
                             
                             // Draw confirmation hint if name is filled
                             if state.highscore_name.len() == 3 {
-                                let t_confirm = "PRESS 'R' TO TRANSMIT DATA";
+                                let t_confirm = if game::is_mobile() {
+                                    "TAP TO TRANSMIT DATA"
+                                } else {
+                                    "PRESS 'R' TO TRANSMIT DATA"
+                                };
                                 let size_confirm = 9.0 * ui_scale;
                                 let dim_confirm = measure_text(t_confirm, Some(&font), size_confirm as u16, 1.0);
                                 let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking (matching reboot prompt)
@@ -2363,7 +2448,11 @@ async fn main() {
                     draw_pixel_text(&t_msg, view_x + (view_w - dim_msg.width) / 2.0, msg_y, size_msg, msg_col, &font);
                     
                     // Reboot prompt
-                    let t_reboot = "PRESS 'R' TO CONTINUE";
+                    let t_reboot = if game::is_mobile() {
+                        "TAP TO CONTINUE"
+                    } else {
+                        "PRESS 'R' TO CONTINUE"
+                    };
                     let dim_reboot = measure_text(t_reboot, Some(&font), size_reboot as u16, 1.0);
                     let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking
                     let reboot_col = Color::from_rgba(0, 240, 255, (255.0 * pulse) as u8);

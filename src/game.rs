@@ -8,6 +8,14 @@ unsafe extern "C" {
     fn save_scores_js(ptr: *const u8, len: usize);
     fn is_game_started_js() -> bool;
     fn set_entering_highscore_js(entering: bool);
+    fn get_mobile_highscore_name_js(ptr: *mut u8, max_len: usize) -> usize;
+    fn is_mobile_highscore_submitted_js() -> bool;
+    fn clear_mobile_highscore_submit_js();
+    fn is_mobile_js() -> bool;
+    fn js_get_switch_lane_left_js() -> bool;
+    fn js_get_switch_lane_right_js() -> bool;
+    fn js_get_trigger_fire_js() -> bool;
+    fn js_get_trigger_missile_js() -> bool;
 }
 
 pub fn play_sound(name: &str) {
@@ -51,6 +59,91 @@ pub fn set_entering_highscore(entering: bool) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         println!("[entering_highscore] {}", entering);
+    }
+}
+
+pub fn get_mobile_highscore_name(buf: &mut [u8]) -> usize {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        get_mobile_highscore_name_js(buf.as_mut_ptr(), buf.len())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = buf;
+        0
+    }
+}
+
+pub fn is_mobile_highscore_submitted() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        is_mobile_highscore_submitted_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+pub fn clear_mobile_highscore_submit() {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        clear_mobile_highscore_submit_js();
+    }
+}
+
+pub fn is_mobile() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        is_mobile_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+pub fn js_get_switch_lane_left() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        js_get_switch_lane_left_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+pub fn js_get_switch_lane_right() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        js_get_switch_lane_right_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+pub fn js_get_trigger_fire() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        js_get_trigger_fire_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
+pub fn js_get_trigger_missile() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        js_get_trigger_missile_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
     }
 }
 
