@@ -1853,7 +1853,12 @@
 
         function startMusic() {
             if (currentAudio) return; // already playing
-            playRandomTrack();
+            const firstTrackIndex = tracks.findIndex(t => t.endsWith('right_siders.mp3'));
+            if (firstTrackIndex !== -1) {
+                playSpecificTrack(firstTrackIndex);
+            } else {
+                playRandomTrack();
+            }
         }
 
         function getTrackName(url) {
