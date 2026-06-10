@@ -280,7 +280,7 @@ async fn main() {
         let mut switch_lane_right = false;
 
         if state.show_leaderboard {
-            if is_key_pressed(KeyCode::R) {
+            if is_key_pressed(KeyCode::R) || is_mouse_button_pressed(MouseButton::Left) {
                 if is_game_over || is_bankrupt {
                     state = GameState::new();
                     is_game_over = false;

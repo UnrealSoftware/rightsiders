@@ -473,12 +473,30 @@
     </main>
 
     <footer>
-        RIGHTSIDERS // Built with Rust + Macroquad // <a href="https://github.com/UnrealSoftware/rightsiders">GIT</a> // <a href="https://www.unrealsoftware.de/contact.php" target="_blank">CONTACT</a>
+        RIGHTSIDERS // Built with Rust + Macroquad //
+		<a href="https://github.com/UnrealSoftware/rightsiders">GIT</a> //
+		<a href="https://www.unrealsoftware.de/contact.php" target="_blank">CONTACT</a> //
+		<a href="?reset">RESET</a>
     </footer>
 
     <!-- Macroquad Loader JS -->
     <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
     <script>
+        // Check for ?reset parameter to clear highscores
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('reset')) {
+                const confirmReset = confirm("Do you want to reset the highscores?");
+                if (confirmReset) {
+                    localStorage.removeItem("rightsiders_highscores_rust");
+                    localStorage.removeItem("rightsiders_highscores");
+                }
+                // Clean up the URL without reloading the page
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+            }
+        })();
+
         let menuActive = true; // Starts in main menu
         let enteringHighscore = false; // Set to true when player is entering name initials
         let startupJingle = new Audio('src/assets/rightsiders_startup.ogg');
