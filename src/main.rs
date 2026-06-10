@@ -24,6 +24,7 @@ fn window_conf() -> Conf {
     }
 }
 
+#[allow(unused)]
 fn hsl_to_rgb(h: f32, s: f32, l: f32) -> Color {
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
     let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
@@ -308,28 +309,54 @@ async fn main() {
                 }
             }
         } else if state.is_showing_summary {
-            // Summary Screen Input
-            let trigger = is_key_pressed(KeyCode::R) || is_key_pressed(KeyCode::Space) || 
-                          is_key_pressed(KeyCode::Enter) || is_mouse_button_pressed(MouseButton::Left);
-            if trigger {
-                if state.summary_stage < 4 {
-                    state.summary_skip_buildup = true;
-                    state.summary_stage = 4;
-                    game::play_sound("menu_pling");
-                } else {
-                    // Transition to highscore entry!
-                    is_game_over = state.player.health <= 0.0 || state.time_left <= 0.0;
-                    is_bankrupt = state.player.credits <= -1000;
-                    
-                    state.is_entering_highscore = true;
-                    state.highscore_name = String::new();
-                    state.highscore_input_delay = 0.5;
-                    game::set_entering_highscore(true);
-                    state.is_showing_summary = false;
-                    game::play_sound("laser");
-                    
-                    while let Some(_) = get_char_pressed() {}
+            // Summary Screen Input - block click and R/Space/Enter interactions for 0.5 seconds
+            if state.summary_timer >= 0.5 {
+                let trigger = is_key_pressed(KeyCode::R) || is_key_pressed(KeyCode::Space) || 
+                              is_key_pressed(KeyCode::Enter) || is_mouse_button_pressed(MouseButton::Left);
+                if trigger {
+                    if state.summary_stage < 4 {
+                        state.summary_skip_buildup = true;
+                        state.summary_stage = 4;
+                        game::play_sound("menu_pling");
+                    } else {
+                        // Transition to highscore entry (if qualified) or directly to leaderboard (if not)
+                        is_game_over = state.time_left <= 0.0;
+                        is_bankrupt = state.player.credits <= -1000;
+                        
+                        let qualifies_for_leaderboard = {
+                            let scores = state.load_leaderboard_rust();
+                            if scores.len() < 10 {
+                                true
+                            } else if let Some(lowest) = scores.last() {
+                                state.player.credits > lowest.1
+                            } else {
+                                true
+                            }
+                        };
+
+                        if qualifies_for_leaderboard && !is_bankrupt {
+                            state.is_entering_highscore = true;
+                            state.highscore_name = String::new();
+                            state.highscore_input_delay = 0.5;
+                            game::set_entering_highscore(true);
+                            state.is_showing_summary = false;
+                            game::play_sound("laser");
+                        } else {
+                            state.leaderboard_data = state.load_leaderboard_rust();
+                            state.new_rank = None;
+                            state.is_entering_highscore = false;
+                            state.show_leaderboard = true;
+                            game::set_entering_highscore(false);
+                            state.is_showing_summary = false;
+                            game::play_sound("laser");
+                        }
+                        
+                        while let Some(_) = get_char_pressed() {}
+                    }
                 }
+            } else {
+                // Drain any inputs during lockout to avoid buffer spillover
+                while let Some(_) = get_char_pressed() {}
             }
         } else if !is_game_over && !is_bankrupt {
             if state.is_in_menu {
@@ -416,15 +443,8 @@ async fn main() {
                     1.0 + (elapsed - 1.0) / 29.0 * 1.5
                 };
 
-                // W / S to adjust speed (x2 or 0.5x)
-                let base_speed = if is_key_down(KeyCode::W) || is_key_down(KeyCode::Up) {
-                    6.0
-                } else if is_key_down(KeyCode::S) || is_key_down(KeyCode::Down) {
-                    1.5
-                } else {
-                    3.0
-                };
-
+                // Player base speed is constant 3.0
+                let base_speed = 3.0;
                 state.player.speed = base_speed * multiplier;
 
                 // Shooting: Spacebar only
@@ -464,13 +484,15 @@ async fn main() {
                 }
 
                 // Check loss conditions (trigger summary debrief instead of immediate game over)
-                let should_end = state.player.health <= 0.0 || state.player.credits <= -1000 || (!state.is_in_menu && state.time_left <= 0.0);
+                let should_end = state.player.credits <= -1000 || (!state.is_in_menu && state.time_left <= 0.0);
                 if should_end {
                     state.is_showing_summary = true;
                     state.summary_timer = 0.0;
                     state.summary_stage = 0;
                     state.summary_count_anim = 0.0;
                     state.summary_skip_buildup = false;
+                    state.menu_particles.clear();
+                    state.menu_shockwaves.clear();
                     game::play_sound("time_over");
 
                     // Drain any buffered characters pressed during gameplay
@@ -481,12 +503,126 @@ async fn main() {
                 let summary_dt = get_frame_time().min(0.08);
                 state.summary_timer += summary_dt;
 
+                // Decay screen shake
+                if state.screen_shake > 0.0 {
+                    state.screen_shake -= summary_dt * 4.0;
+                }
+
+                // Update menu particles & shockwaves during summary screen
+                {
+                    let dt = summary_dt;
+                    for p in state.menu_particles.iter_mut() {
+                        p.lifetime += dt;
+                        p.x += p.vx * dt;
+                        p.y += p.vy * dt;
+                        p.vy += 120.0 * ui_scale * dt; // gravity
+                        p.vx *= 0.98; // drag
+                    }
+                    state.menu_particles.retain(|p| p.lifetime < p.max_lifetime);
+
+                    for sw in state.menu_shockwaves.iter_mut() {
+                        sw.lifetime += dt;
+                        sw.radius += sw.speed * dt;
+                    }
+                    state.menu_shockwaves.retain(|sw| sw.lifetime < sw.max_lifetime);
+                }
+
                 if !state.summary_skip_buildup {
-                    if state.summary_timer >= 1.0 {
-                        let elapsed = state.summary_timer - 1.0;
-                        let new_stage = (elapsed / 1.5) as usize;
+                    if state.summary_timer >= 0.5 {
+                        let elapsed = state.summary_timer - 0.5;
+                        let new_stage = (elapsed / 0.75) as usize;
 
                         if new_stage > state.summary_stage && state.summary_stage < 4 {
+                            // Spawn landing/credits explosion at the center of the finished stage's credits text!
+                            let target_val = match state.summary_stage {
+                                0 => state.offenders_killed_laser as f32 * 1000.0,
+                                1 => state.offenders_killed_rocket as f32 * 750.0,
+                                2 => state.collateral_damage_kills as f32 * -500.0,
+                                _ => state.player.credits as f32,
+                            };
+
+                            if target_val != 0.0 {
+                                let panel_w = (440.0 * ui_scale).min(view_w - 30.0 * ui_scale);
+                                let panel_h = (220.0 * ui_scale).min(view_h - 60.0 * ui_scale);
+                                let panel_x = cx - panel_w / 2.0;
+                                let panel_y = view_y + (view_h - panel_h) / 2.0 - 20.0 * ui_scale;
+                                let credit_x = panel_x + panel_w - 30.0 * ui_scale;
+                                let start_y = panel_y + 75.0 * ui_scale;
+                                let row_gap = 25.0 * ui_scale;
+                                let size_row = 9.0 * ui_scale;
+
+                                let current_y = start_y + state.summary_stage as f32 * row_gap;
+                                let credits_str = match state.summary_stage {
+                                    0 => format!("{:+} CR", state.offenders_killed_laser * 1000),
+                                    1 => format!("{:+} CR", state.offenders_killed_rocket * 750),
+                                    2 => format!("{:+} CR", state.collateral_damage_kills as i32 * -500),
+                                    _ => format!("{} CR", state.player.credits),
+                                };
+                                let credits_dim = measure_text(&credits_str, Some(&font), size_row as u16, 1.0);
+                                let ex = credit_x - credits_dim.width / 2.0;
+                                let ey = current_y + credits_dim.height / 2.0;
+
+                                game::play_sound("menu_explosion");
+                                state.screen_shake = 0.6;
+
+                                // Spawn burst of particles at the credits text center
+                                let num_particles = 80;
+                                let (r, g, b) = if target_val > 0.0 {
+                                    (57u8, 255u8, 20u8)   // Neon Green
+                                } else {
+                                    (255u8, 0u8, 127u8)   // Neon Pink
+                                };
+
+                                for i in 0..num_particles {
+                                    let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU
+                                        + (i as f32 * 2.399);
+                                    let speed = 80.0 * ui_scale + (i as f32 % 6.0) * 40.0 * ui_scale;
+                                    let vx = angle.cos() * speed;
+                                    let vy = angle.sin() * speed;
+
+                                    state.menu_particles.push(crate::game::MenuParticle {
+                                        x: ex,
+                                        y: ey,
+                                        vx,
+                                        vy,
+                                        lifetime: 0.0,
+                                        max_lifetime: 0.5 + (i as f32 % 4.0) * 0.12,
+                                        size: 2.0 * ui_scale + (i as f32 % 4.0) * ui_scale,
+                                        color_r: r,
+                                        color_g: g,
+                                        color_b: b,
+                                    });
+                                }
+
+                                // Spawn 2 shockwaves in the same color
+                                state.menu_shockwaves.push(crate::game::MenuShockwave {
+                                    x: ex,
+                                    y: ey,
+                                    radius: 0.0,
+                                    max_radius: 120.0 * ui_scale,
+                                    speed: 350.0 * ui_scale,
+                                    lifetime: 0.0,
+                                    max_lifetime: 0.4,
+                                    thickness: 5.0 * ui_scale,
+                                    color_r: r,
+                                    color_g: g,
+                                    color_b: b,
+                                });
+                                state.menu_shockwaves.push(crate::game::MenuShockwave {
+                                    x: ex,
+                                    y: ey,
+                                    radius: 0.0,
+                                    max_radius: 90.0 * ui_scale,
+                                    speed: 280.0 * ui_scale,
+                                    lifetime: 0.0,
+                                    max_lifetime: 0.4,
+                                    thickness: 3.0 * ui_scale,
+                                    color_r: r,
+                                    color_g: g,
+                                    color_b: b,
+                                });
+                            }
+
                             game::play_sound("menu_pling");
                             state.summary_stage = new_stage.min(4);
                             state.summary_count_anim = 0.0;
@@ -494,37 +630,23 @@ async fn main() {
 
                         if state.summary_stage < 4 {
                             let target_val = match state.summary_stage {
-                                0 => state.offenders_killed_laser as f32,
-                                1 => state.offenders_killed_rocket as f32,
-                                2 => state.collateral_damage_kills as f32,
+                                0 => state.offenders_killed_laser as f32 * 1000.0,
+                                1 => state.offenders_killed_rocket as f32 * 750.0,
+                                2 => state.collateral_damage_kills as f32 * -500.0,
                                 _ => state.player.credits as f32,
                             };
 
-                            let stage_elapsed = elapsed - (state.summary_stage as f32 * 1.5);
-                            let progress = (stage_elapsed / 1.5).min(1.0).max(0.0);
+                            let stage_elapsed = elapsed - (state.summary_stage as f32 * 0.75);
+                            let progress = (stage_elapsed / 0.75).min(1.0).max(0.0);
                             let prev_anim = state.summary_count_anim;
                             state.summary_count_anim = target_val * progress;
 
                             // Play click sounds on change
                             if state.summary_count_anim != prev_anim {
-                                if state.summary_stage == 3 {
-                                    // Adapt tick divisor to target value to avoid high frequency buzzing
-                                    let divisor = if target_val.abs() > 20000.0 {
-                                        2000
-                                    } else if target_val.abs() > 10000.0 {
-                                        1000
-                                    } else if target_val.abs() > 5000.0 {
-                                        500
-                                    } else {
-                                        250
-                                    };
-                                    if (state.summary_count_anim as i32 / divisor) != (prev_anim as i32 / divisor) {
-                                        game::play_sound("scan_tick");
-                                    }
-                                } else {
-                                    if (state.summary_count_anim as i32) != (prev_anim as i32) {
-                                        game::play_sound("scan_tick");
-                                    }
+                                let c_abs = target_val.abs() as i32;
+                                let divisor = (c_abs / 20).max(25);
+                                if (state.summary_count_anim as i32 / divisor) != (prev_anim as i32 / divisor) {
+                                    game::play_sound("scan_tick");
                                 }
                             }
                         }
@@ -578,6 +700,113 @@ async fn main() {
                                 game::play_sound("rank_fail");
                             }
                         }
+                    }
+                }
+            } else if state.show_leaderboard {
+                // Update particles and shockwaves on highscore screen
+                let dt = get_frame_time().min(0.08);
+                for p in state.menu_particles.iter_mut() {
+                    p.lifetime += dt;
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    p.vy += 120.0 * ui_scale * dt; // gravity
+                    p.vx *= 0.98; // drag
+                }
+                state.menu_particles.retain(|p| p.lifetime < p.max_lifetime);
+
+                for sw in state.menu_shockwaves.iter_mut() {
+                    sw.lifetime += dt;
+                    sw.radius += sw.speed * dt;
+                }
+                state.menu_shockwaves.retain(|sw| sw.lifetime < sw.max_lifetime);
+
+                // Spawn fireworks if they reached the top 10!
+                if state.new_rank.is_some() {
+                    state.summary_timer += dt;
+
+                    // Use state.summary_count_anim to store the current random delay target (0.2 to 0.5s)
+                    let mut current_target_delay = state.summary_count_anim;
+                    if current_target_delay < 0.2 || current_target_delay > 0.5 {
+                        current_target_delay = 0.2 + state.random_float() * 0.3;
+                        state.summary_count_anim = current_target_delay;
+                    }
+
+                    if state.summary_timer >= current_target_delay {
+                        state.summary_timer = 0.0;
+
+                        // Determine next random delay for the subsequent firework
+                        let next_delay = 0.2 + state.random_float() * 0.3;
+                        state.summary_count_anim = next_delay;
+
+                        // Pseudo-random position:
+                        let rx_val = state.random_float();
+                        let ry_val = state.random_float();
+
+                        let ex = view_x + 0.1 * view_w + rx_val * (view_w * 0.8);
+                        let ey = view_y + 0.1 * view_h + ry_val * (view_h * 0.5); // upper 60% of screen
+
+                        // Play fireworks sound!
+                        game::play_sound("firework");
+
+                        // Pick one specific color for this firework: yellow, green, pink, or cyan
+                        let color_type = (state.next_random() >> 16) % 4;
+                        let (r, g, b) = match color_type {
+                            0 => (255u8, 235u8, 59u8),  // Yellow
+                            1 => (57u8, 255u8, 20u8),   // Green
+                            2 => (255u8, 0u8, 127u8),   // Pink
+                            _ => (0u8, 240u8, 255u8),   // Cyan
+                        };
+
+                        // Spawn particles
+                        let num_particles = 80;
+                        for i in 0..num_particles {
+                            let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU
+                                + (i as f32 * 2.399);
+                            let speed = 70.0 * ui_scale + (i as f32 % 5.0) * 35.0 * ui_scale;
+                            let vx = angle.cos() * speed;
+                            let vy = angle.sin() * speed;
+
+                            state.menu_particles.push(crate::game::MenuParticle {
+                                x: ex,
+                                y: ey,
+                                vx,
+                                vy,
+                                lifetime: 0.0,
+                                max_lifetime: 0.6 + (i as f32 % 4.0) * 0.15,
+                                size: 2.0 * ui_scale + (i as f32 % 4.0) * ui_scale,
+                                color_r: r,
+                                color_g: g,
+                                color_b: b,
+                            });
+                        }
+
+                        // Spawn 2 expanding shockwaves in the same color
+                        state.menu_shockwaves.push(crate::game::MenuShockwave {
+                            x: ex,
+                            y: ey,
+                            radius: 0.0,
+                            max_radius: 110.0 * ui_scale,
+                            speed: 320.0 * ui_scale,
+                            lifetime: 0.0,
+                            max_lifetime: 0.45,
+                            thickness: 4.0 * ui_scale,
+                            color_r: r,
+                            color_g: g,
+                            color_b: b,
+                        });
+                        state.menu_shockwaves.push(crate::game::MenuShockwave {
+                            x: ex,
+                            y: ey,
+                            radius: 0.0,
+                            max_radius: 80.0 * ui_scale,
+                            speed: 250.0 * ui_scale,
+                            lifetime: 0.0,
+                            max_lifetime: 0.45,
+                            thickness: 2.5 * ui_scale,
+                            color_r: r,
+                            color_g: g,
+                            color_b: b,
+                        });
                     }
                 }
             }
@@ -1243,6 +1472,11 @@ async fn main() {
                 let hover_highscore = mx >= h_bx && mx <= h_bx + max_btn_w && my >= h_by && my <= h_by + btn_h;
                 let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
 
+                // Subtle neon/cyberpunk text shake parameters for highlighted button
+                let shake_speed_x = 75.0;
+                let shake_speed_y = 93.0;
+                let shake_amp = 0.7 * ui_scale;
+
                 // Button 1 (Play)
                 let play_bg_col = if state.menu_selected_idx == 0 || hover_play {
                     Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
@@ -1260,12 +1494,23 @@ async fn main() {
                     Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
                 };
 
+                let play_shake_x = if state.menu_selected_idx == 0 {
+                    (get_time() * shake_speed_x).sin() as f32 * shake_amp
+                } else {
+                    0.0
+                };
+                let play_shake_y = if state.menu_selected_idx == 0 {
+                    (get_time() * shake_speed_y).cos() as f32 * shake_amp
+                } else {
+                    0.0
+                };
+
                 draw_rectangle(p_bx, p_by, max_btn_w, btn_h, play_bg_col);
                 draw_pixel_rect_lines(p_bx, p_by, max_btn_w, btn_h, 2.0 * ui_scale, play_border_col);
                 draw_pixel_text(
                     play_text,
-                    cx - play_dim.width / 2.0,
-                    p_by + btn_h / 2.0 + play_dim.height / 2.0 - 0.5 * ui_scale,
+                    cx - play_dim.width / 2.0 + play_shake_x,
+                    p_by + btn_h / 2.0 + play_dim.height / 2.0 - 0.5 * ui_scale + play_shake_y,
                     btn_font_size,
                     play_text_col,
                     &font,
@@ -1288,12 +1533,23 @@ async fn main() {
                     Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
                 };
 
+                let hs_shake_x = if state.menu_selected_idx == 1 {
+                    (get_time() * shake_speed_x).sin() as f32 * shake_amp
+                } else {
+                    0.0
+                };
+                let hs_shake_y = if state.menu_selected_idx == 1 {
+                    (get_time() * shake_speed_y).cos() as f32 * shake_amp
+                } else {
+                    0.0
+                };
+
                 draw_rectangle(h_bx, h_by, max_btn_w, btn_h, highscore_bg_col);
                 draw_pixel_rect_lines(h_bx, h_by, max_btn_w, btn_h, 2.0 * ui_scale, highscore_border_col);
                 draw_pixel_text(
                     highscore_text,
-                    cx - highscore_dim.width / 2.0,
-                    h_by + btn_h / 2.0 + highscore_dim.height / 2.0 - 0.5 * ui_scale,
+                    cx - highscore_dim.width / 2.0 + hs_shake_x,
+                    h_by + btn_h / 2.0 + highscore_dim.height / 2.0 - 0.5 * ui_scale + hs_shake_y,
                     btn_font_size,
                     highscore_text_col,
                     &font,
@@ -1316,12 +1572,23 @@ async fn main() {
                     Color::from_rgba(90, 90, 100, (150.0 * buttons_alpha) as u8)
                 };
 
+                let lvl_shake_x = if state.menu_selected_idx == 2 {
+                    (get_time() * shake_speed_x).sin() as f32 * shake_amp
+                } else {
+                    0.0
+                };
+                let lvl_shake_y = if state.menu_selected_idx == 2 {
+                    (get_time() * shake_speed_y).cos() as f32 * shake_amp
+                } else {
+                    0.0
+                };
+
                 draw_rectangle(l_bx, l_by, max_btn_w, btn_h, level_bg_col);
                 draw_pixel_rect_lines(l_bx, l_by, max_btn_w, btn_h, 2.0 * ui_scale, level_border_col);
                 draw_pixel_text(
                     level_text,
-                    cx - level_dim.width / 2.0,
-                    l_by + btn_h / 2.0 + level_dim.height / 2.0 - 0.5 * ui_scale,
+                    cx - level_dim.width / 2.0 + lvl_shake_x,
+                    l_by + btn_h / 2.0 + level_dim.height / 2.0 - 0.5 * ui_scale + lvl_shake_y,
                     btn_font_size,
                     level_text_col,
                     &font,
@@ -1702,7 +1969,7 @@ async fn main() {
                 let size_sub = 8.0 * ui_scale;
                 let size_row = 9.0 * ui_scale;
 
-                let t_title = "[ REU-99 DEBRIEF ]";
+                let t_title = "[ KX-128#67 DEBRIEF ]";
 
                 let title_dim = measure_text(t_title, Some(&font), size_title as u16, 1.0);
 
@@ -1741,7 +2008,7 @@ async fn main() {
                     // Decide whether this row is visible yet
                     let is_visible = if state.summary_skip_buildup {
                         true
-                    } else if state.summary_timer < 1.0 {
+                    } else if state.summary_timer < 0.5 {
                         false
                     } else {
                         stage >= idx
@@ -1754,15 +2021,27 @@ async fn main() {
                     // Calculate row quantity and credits
                     let (qty, credits, _) = if idx == stage && !state.summary_skip_buildup {
                         match idx {
-                            0 => (state.summary_count_anim as i32, (state.summary_count_anim as i32 * 1000), true),
-                            1 => (state.summary_count_anim as i32, (state.summary_count_anim as i32 * 1000), true),
-                            2 => (state.summary_count_anim as i32, (state.summary_count_anim as i32 * -500), true),
+                            0 => (
+                                ((state.summary_count_anim / 1000.0).abs() as i32).min(state.offenders_killed_laser as i32),
+                                state.summary_count_anim as i32,
+                                true
+                            ),
+                            1 => (
+                                ((state.summary_count_anim / 750.0).abs() as i32).min(state.offenders_killed_rocket as i32),
+                                state.summary_count_anim as i32,
+                                true
+                            ),
+                            2 => (
+                                ((state.summary_count_anim / -500.0).abs() as i32).min(state.collateral_damage_kills as i32),
+                                state.summary_count_anim as i32,
+                                true
+                            ),
                             _ => (0, state.summary_count_anim as i32, true)
                         }
                     } else {
                         match idx {
                             0 => (state.offenders_killed_laser as i32, (state.offenders_killed_laser as i32 * 1000), false),
-                            1 => (state.offenders_killed_rocket as i32, (state.offenders_killed_rocket as i32 * 1000), false),
+                            1 => (state.offenders_killed_rocket as i32, (state.offenders_killed_rocket as i32 * 750), false),
                             2 => (state.collateral_damage_kills as i32, (state.collateral_damage_kills as i32 * -500), false),
                             _ => (0, state.player.credits, false)
                         }
@@ -1779,7 +2058,7 @@ async fn main() {
 
                     // Draw line separator just above the Total balance row (the "second line") - shifted up slightly for better spacing
                     if idx == 3 {
-                        draw_line(panel_x + 20.0 * ui_scale, current_y - 15.0 * ui_scale, panel_x + panel_w - 20.0 * ui_scale, current_y - 15.0 * ui_scale, 1.0 * ui_scale, Color::from_rgba(0, 240, 255, 80));
+                        draw_line(panel_x + 20.0 * ui_scale, current_y - 17.0 * ui_scale, panel_x + panel_w - 20.0 * ui_scale, current_y - 17.0 * ui_scale, 1.0 * ui_scale, Color::from_rgba(0, 240, 255, 80));
                     }
 
                     draw_pixel_text(label, label_x, current_y, size_row, row_color, &font);
@@ -1826,6 +2105,28 @@ async fn main() {
                     let alpha = ( (get_time() * 8.0).sin().abs() * 155.0 + 100.0 ) as u8;
                     draw_pixel_text(prompt_text, cx - prompt_dim.width / 2.0, prompt_y, size_sub, Color::from_rgba(57, 255, 20, alpha), &font);
                 }
+
+                // Draw explosion particles on top of summary overlay
+                for p in &state.menu_particles {
+                    let alpha = 1.0 - (p.lifetime / p.max_lifetime);
+                    let a = (alpha * 255.0) as u8;
+                    let size = p.size * alpha; // shrink as they fade
+                    draw_rectangle(
+                        p.x - size / 2.0,
+                        p.y - size / 2.0,
+                        size,
+                        size,
+                        Color::from_rgba(p.color_r, p.color_g, p.color_b, a),
+                    );
+                }
+
+                // Draw cool shockwaves on top of summary overlay
+                for sw in &state.menu_shockwaves {
+                    let alpha = 1.0 - (sw.lifetime / sw.max_lifetime);
+                    let a = (alpha * 255.0) as u8;
+                    let current_color = Color::from_rgba(sw.color_r, sw.color_g, sw.color_b, a);
+                    draw_circle_lines(sw.x, sw.y, sw.radius, sw.thickness * alpha, current_color);
+                }
             }
 
             // ==========================================
@@ -1845,7 +2146,7 @@ async fn main() {
                     let t_header = if is_bankrupt {
                         "BUDGET EXCEEDED - DECOMMISSIONED"
                     } else if state.player.health <= 0.0 {
-                        "REU-99 INTEGRITY CRITICAL // SIM TERMINATED"
+                        "KX-128#67 INTEGRITY CRITICAL // SIM TERMINATED"
                     } else {
                         "PATROL COMPLETE"
                     };
@@ -2038,9 +2339,16 @@ async fn main() {
                     // Message below table
                     let (t_msg, msg_col) = if is_game_over || is_bankrupt {
                         if let Some(rank) = state.new_rank {
-                            let hue = ((get_time() * 360.0) % 360.0) as f32; // Fast rainbow cycling hue
-                            let pulse = (get_time() * 9.0).sin() * 0.4 + 0.6; // Blinking neon pulse
-                            let mut color = hsl_to_rgb(hue, 1.0, 0.5); // Bright neon color
+                            let color_green = Color::from_rgba(57, 255, 20, 255);
+                            let color_yellow = Color::from_rgba(255, 235, 59, 255);
+                            let mix_val = ((get_time() * 8.0).sin() * 0.5 + 0.5) as f32;
+                            let mut color = Color::new(
+                                color_green.r + (color_yellow.r - color_green.r) * mix_val,
+                                color_green.g + (color_yellow.g - color_green.g) * mix_val,
+                                color_green.b + (color_yellow.b - color_green.b) * mix_val,
+                                1.0,
+                            );
+                            let pulse = (get_time() * 9.0).sin() * 0.3 + 0.7; // Blinking alpha
                             color.a = pulse as f32;
                             (format!("CONGRATULATIONS UNIT! YOU RANKED #{}!", rank + 1), color)
                         } else {
@@ -2061,6 +2369,27 @@ async fn main() {
                     let reboot_col = Color::from_rgba(0, 240, 255, (255.0 * pulse) as u8);
                     let reboot_y = msg_y + 18.0 * ui_scale;
                     draw_pixel_text(t_reboot, view_x + (view_w - dim_reboot.width) / 2.0, reboot_y, size_reboot, reboot_col, &font);
+
+                    // Draw firework particles and shockwaves on top of the leaderboard
+                    for p in &state.menu_particles {
+                        let alpha = 1.0 - (p.lifetime / p.max_lifetime);
+                        let a = (alpha * 255.0) as u8;
+                        let size = p.size * alpha; // shrink as they fade
+                        draw_rectangle(
+                            p.x - size / 2.0,
+                            p.y - size / 2.0,
+                            size,
+                            size,
+                            Color::from_rgba(p.color_r, p.color_g, p.color_b, a),
+                        );
+                    }
+
+                    for sw in &state.menu_shockwaves {
+                        let alpha = 1.0 - (sw.lifetime / sw.max_lifetime);
+                        let a = (alpha * 255.0) as u8;
+                        let current_color = Color::from_rgba(sw.color_r, sw.color_g, sw.color_b, a);
+                        draw_circle_lines(sw.x, sw.y, sw.radius, sw.thickness * alpha, current_color);
+                    }
                 }
             }
         }

@@ -97,6 +97,7 @@ pub struct MenuShockwave {
     pub x: f32,
     pub y: f32,
     pub radius: f32,
+    #[allow(dead_code)]
     pub max_radius: f32,
     pub speed: f32,
     pub lifetime: f32,
@@ -426,6 +427,7 @@ pub struct Player {
     pub plane_y: f32,
     
     pub health: f32,
+    #[allow(dead_code)]
     pub shield: f32,
     pub battery: f32, // Ammo charge (0.0 to 100.0)
     pub credits: i32,
@@ -579,6 +581,15 @@ impl GameState {
         state
     }
 
+
+    pub fn next_random(&mut self) -> u32 {
+        self.rng_state = self.rng_state.wrapping_mul(1103515245).wrapping_add(12345);
+        self.rng_state
+    }
+
+    pub fn random_float(&mut self) -> f32 {
+        (self.next_random() as f32) / (u32::MAX as f32)
+    }
 
     /// Spawn a citizen at a given tile
     pub fn spawn_citizen_at(&mut self, tx: usize, ty: usize, index: usize) {
@@ -1223,7 +1234,7 @@ impl GameState {
                 play_sound("explosion");
                 play_sound("cash_earn");
 
-                let reward = 1000;
+                let reward = 750;
                 self.player.credits += reward;
                 self.offenders_killed_rocket += 1;
                 self.screen_shake = (self.screen_shake + 0.1).min(0.3);
@@ -1237,7 +1248,7 @@ impl GameState {
                 });
 
                 self.credits_flash = Some((
-                    format!("CRIMINAL ELIMINATED // +{} CR", reward),
+                    format!("CRIMINAL EDUCATED // +{} CR", reward),
                     0x39ff14ff,
                     1.2,
                 ));
@@ -1634,13 +1645,7 @@ impl GameState {
                     is_player: false,
                 });
 
-                // Deal damage to player
-                let damage = 15.0;
-                if self.player.shield > 0.0 {
-                    self.player.shield = (self.player.shield - damage).max(0.0);
-                } else {
-                    self.player.health = (self.player.health - damage).max(0.0);
-                }
+                // Deal damage to player (sensory shake/sound, no actual health/shield damage)
 
                 self.screen_shake = 0.25;
                 self.player.damage_flash = 0.15;
@@ -1784,7 +1789,7 @@ impl GameState {
                             });
 
                             self.credits_flash = Some((
-                                format!("CRIMINAL ELIMINATED // +{} CR", reward),
+                                format!("CRIMINAL EDUCATED // +{} CR", reward),
                                 0x39ff14ff,
                                 1.5
                             ));

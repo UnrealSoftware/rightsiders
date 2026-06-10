@@ -1,7 +1,6 @@
 # What is this?
-Right Siders is a game about walking on the right side.
-Implemented using Rust, Macroquad, JavaScript and HTML.
-Nearly all code is written by agentic AI using Google's Antigravity with Gemini 3.5 Flash (Medium).
+Right Siders is a game about walking on the right side. Implemented using Rust, Macroquad, JavaScript and HTML.
+Nearly all code is written by agentic AI using Google's Antigravity with Gemini 3.5 Flash (Medium). Music is created with Suno.
 You can play the game at www.rightsiders.de
 
 ## Why?

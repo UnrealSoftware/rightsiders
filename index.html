@@ -615,10 +615,7 @@
                         <span>Switch Lane</span>
                         <span><kbd class="key-badge">A</kbd> / <kbd class="key-badge">D</kbd></span>
                     </li>
-                    <li class="instruction-item">
-                        <span>Faster/Slower</span>
-                        <span><kbd class="key-badge">W</kbd> / <kbd class="key-badge">S</kbd></span>
-                    </li>
+
                     <li class="instruction-item">
                         <span>Fire Blaster</span>
                         <span><kbd class="key-badge">SPACE</kbd></span>
@@ -1182,8 +1179,54 @@
                 filter.connect(noiseGain);
                 noiseGain.connect(audioCtx.destination);
                 noise.start(now);
-                noise.stop(now + 0.45);
             } 
+            else if (type === 'firework') {
+                // Sharp high-pass crack pop + crackly noise tail
+                // Pop
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+
+                gain.gain.setValueAtTime(0.40, now);
+                gain.gain.linearRampToValueAtTime(0.001, now + 0.08);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.08);
+
+                // Crackle noise tail
+                const bufferSize = audioCtx.sampleRate * 0.4;
+                const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    let r = Math.random() * 2.0 - 1.0;
+                    if (Math.abs(r) > 0.85) {
+                        data[i] = r;
+                    } else {
+                        data[i] = r * 0.05;
+                    }
+                }
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.setValueAtTime(1800, now);
+                filter.frequency.exponentialRampToValueAtTime(800, now + 0.4);
+
+                const noiseGain = audioCtx.createGain();
+                noiseGain.gain.setValueAtTime(0.20, now);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+                noise.connect(filter);
+                filter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noise.start(now);
+                noise.stop(now + 0.4);
+            }
             else if (type === 'collateral') {
                 // High-pitched industrial warning alert
                 for (let delay of [0.0, 0.14]) {
