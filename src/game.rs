@@ -1999,7 +1999,7 @@ impl GameState {
                             ));
                         } else {
                             // Collateral Damage! Shot a compliant Rightsider!
-                            let penalty = 500;
+                            let penalty = 1250;
                             self.player.credits -= penalty;
                             self.collateral_damage_kills += 1;
                             self.player.damage_flash = 0.2; // Red screenshake glow

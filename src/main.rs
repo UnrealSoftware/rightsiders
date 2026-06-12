@@ -120,6 +120,7 @@ fn draw_pixel_text(text: &str, x: f32, y: f32, size: f32, color: Color, font: &F
 }
 
 // Helper to draw a pixelated rectangle outline using sharp block rectangles
+// Corners are recessed to make the box appear rounded and avoid overdrawing transparent corner pixels.
 fn draw_pixel_rect_lines(x: f32, y: f32, w: f32, h: f32, thickness: f32, color: Color) {
     let x = x.round();
     let y = y.round();
@@ -127,14 +128,14 @@ fn draw_pixel_rect_lines(x: f32, y: f32, w: f32, h: f32, thickness: f32, color: 
     let h = h.round();
     let t = thickness.round().max(1.0);
 
-    // Top border
-    draw_rectangle(x, y, w, t, color);
-    // Bottom border
-    draw_rectangle(x, y + h - t, w, t, color);
-    // Left border
-    draw_rectangle(x, y, t, h, color);
-    // Right border
-    draw_rectangle(x + w - t, y, t, h, color);
+    // Top border (shortened by t on both ends)
+    draw_rectangle(x + t, y, w - 2.0 * t, t, color);
+    // Bottom border (shortened by t on both ends)
+    draw_rectangle(x + t, y + h - t, w - 2.0 * t, t, color);
+    // Left border (shortened by t on both ends)
+    draw_rectangle(x, y + t, t, h - 2.0 * t, color);
+    // Right border (shortened by t on both ends)
+    draw_rectangle(x + w - t, y + t, t, h - 2.0 * t, color);
 }
 
 // Helper to draw a pixel-art double note icon
@@ -153,10 +154,21 @@ fn draw_music_note_icon(x: f32, y: f32, size: f32, color: Color) {
     draw_rectangle(x + 5.0 * u, y + 0.0 * u, 2.0 * u, 1.0 * u, color);
 }
 
-// Helper to draw a retro hollow square fullscreen icon
+// Helper to draw a retro hollow square fullscreen icon (sharp rectangle outline)
 fn draw_fullscreen_icon(x: f32, y: f32, size: f32, color: Color) {
-    let thickness = (size * 0.15).max(1.0);
-    draw_pixel_rect_lines(x, y, size, size, thickness, color);
+    let x = x.round();
+    let y = y.round();
+    let size = size.round();
+    let t = (size * 0.15).round().max(1.0);
+
+    // Top
+    draw_rectangle(x, y, size, t, color);
+    // Bottom
+    draw_rectangle(x, y + size - t, size, t, color);
+    // Left (shortened to avoid overlapping top/bottom)
+    draw_rectangle(x, y + t, t, size - 2.0 * t, color);
+    // Right (shortened to avoid overlapping top/bottom)
+    draw_rectangle(x + size - t, y + t, t, size - 2.0 * t, color);
 }
 
 // Helper to draw an outline circle on a SpriteTexture (midpoint circle algorithm)
@@ -651,7 +663,7 @@ async fn main() {
                             let target_val = match state.summary_stage {
                                 0 => state.offenders_killed_laser as f32 * 1000.0,
                                 1 => state.offenders_killed_rocket as f32 * 750.0,
-                                2 => state.collateral_damage_kills as f32 * -500.0,
+                                2 => state.collateral_damage_kills as f32 * -1250.0,
                                 _ => state.player.credits as f32,
                             };
 
@@ -669,7 +681,7 @@ async fn main() {
                                 let credits_str = match state.summary_stage {
                                     0 => format!("{:+} CR", state.offenders_killed_laser * 1000),
                                     1 => format!("{:+} CR", state.offenders_killed_rocket * 750),
-                                    2 => format!("{:+} CR", state.collateral_damage_kills as i32 * -500),
+                                    2 => format!("{:+} CR", state.collateral_damage_kills as i32 * -1250),
                                     _ => format!("{} CR", state.player.credits),
                                 };
                                 let credits_dim = measure_text(&credits_str, Some(&font), size_row as u16, 1.0);
@@ -746,7 +758,7 @@ async fn main() {
                             let target_val = match state.summary_stage {
                                 0 => state.offenders_killed_laser as f32 * 1000.0,
                                 1 => state.offenders_killed_rocket as f32 * 750.0,
-                                2 => state.collateral_damage_kills as f32 * -500.0,
+                                2 => state.collateral_damage_kills as f32 * -1250.0,
                                 _ => state.player.credits as f32,
                             };
 
@@ -2315,7 +2327,7 @@ async fn main() {
                                 true
                             ),
                             2 => (
-                                ((state.summary_count_anim / -500.0).abs() as i32).min(state.collateral_damage_kills as i32),
+                                ((state.summary_count_anim / -1250.0).abs() as i32).min(state.collateral_damage_kills as i32),
                                 state.summary_count_anim as i32,
                                 true
                             ),
@@ -2325,7 +2337,7 @@ async fn main() {
                         match idx {
                             0 => (state.offenders_killed_laser as i32, (state.offenders_killed_laser as i32 * 1000), false),
                             1 => (state.offenders_killed_rocket as i32, (state.offenders_killed_rocket as i32 * 750), false),
-                            2 => (state.collateral_damage_kills as i32, (state.collateral_damage_kills as i32 * -500), false),
+                            2 => (state.collateral_damage_kills as i32, (state.collateral_damage_kills as i32 * -1250), false),
                             _ => (0, state.player.credits, false)
                         }
                     };
