@@ -7,6 +7,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+	<link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+	<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+	<link rel="shortcut icon" href="/favicon.ico">
+	<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+	<link rel="manifest" href="/site.webmanifest">
+
     <style>
         :root {
             --neon-cyan: #00f0ff;
@@ -374,7 +380,7 @@
             height: 100%;
             background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
             border-radius: 3px;
-            animation: loadProgress 1.0s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            animation: loadProgress 2.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
             position: relative;
         }
 
@@ -1136,7 +1142,6 @@
             // A large touch-screen desktop monitor (e.g. 2560x1920 with touch support) is treated as desktop.
             const isMobile = uaCheck || sizeCheck;
             
-            console.log("[isMobileDevice] Result:", isMobile, "| UA:", uaCheck, "| Size Check:", sizeCheck, "| Touch Check:", touchCheck, "| Viewport:", window.innerWidth, "x", window.innerHeight);
             return isMobile;
         }
 
@@ -1521,9 +1526,9 @@
                         lineDiv.classList.remove("flash");
                         startupLineIdx++;
                         startupCharIdx = 0;
-                        setTimeout(typeStartupLine, 35); // Pause between lines
+                        setTimeout(typeStartupLine, 40); // Ultra-fast pause between lines
                     } else {
-                        setTimeout(typeStartupLine, 2); // Type letter by letter very quickly
+                        setTimeout(typeStartupLine, 2); // Ultra-fast typing speed (2ms per char)
                     }
                 }
             }
@@ -1532,11 +1537,20 @@
                 typeStartupLine();
             }
 
-            setTimeout(() => {
+            const loaderBarInner = document.querySelector(".loader-bar");
+            if (loaderBarInner) {
+                loaderBarInner.addEventListener("animationend", () => {
+                    showStartButton();
+                });
+            }
+
+            function showStartButton() {
                 const loaderBar = document.querySelector(".loader-bar-container");
                 if (loaderBar) {
                     loaderBar.style.display = 'none';
                 }
+
+                if (document.getElementById("click-to-start")) return;
 
                 const startBtn = document.createElement("div");
                 startBtn.id = "click-to-start";
@@ -1552,7 +1566,7 @@
                 startBtn.style.background = "rgba(57, 255, 20, 0.05)";
                 startBtn.style.cursor = "pointer";
                 startBtn.style.letterSpacing = "2px";
-                startBtn.style.animation = "startBlink 0.13s infinite alternate"; // 3x faster intense blink
+                startBtn.style.animation = "startBlink 0.13s infinite alternate";
                 startBtn.style.transition = "all 0.2s ease";
                 startBtn.style.position = "relative";
                 startBtn.style.zIndex = "105";
@@ -1602,7 +1616,6 @@
                     initAudio();
 
                     // Play the deferred menu jingle now that we have a user gesture
-                    // (pendingMenuJingle is set by set_menu_active(true) before the first click)
                     if (pendingMenuJingle) {
                         pendingMenuJingle = false;
                         if (startupJingle) {
@@ -1631,7 +1644,7 @@
                         setTimeout(() => loader.remove(), 400);
                     }
                 });
-            }, 1000);
+            }
         }
 
         if (document.readyState === 'complete' || document.readyState === 'interactive') {
