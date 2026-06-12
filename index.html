@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RIGHTSIDERS">
     <title>RIGHTSIDERS - go right, be right*</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -981,6 +984,116 @@
             color: #fff;
             text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
         }
+
+        /* Fullscreen Modal/Toast styling */
+        .fs-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 8, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        .fs-modal-overlay.open {
+            display: block;
+            opacity: 1;
+        }
+        .fs-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(10, 15, 25, 0.98);
+            border: 2px solid var(--neon-pink);
+            box-shadow: 0 0 30px rgba(255, 0, 127, 0.35), inset 0 0 15px rgba(255, 0, 127, 0.1);
+            border-radius: 6px;
+            padding: 24px;
+            z-index: 10000;
+            width: 380px;
+            max-width: 90vw;
+            max-height: 90vh;
+            flex-direction: column;
+            font-family: 'Share Tech Mono', monospace;
+            color: #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .fs-modal.open {
+            display: flex !important;
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .fs-modal h3 {
+            color: var(--neon-pink);
+            margin-top: 0;
+            margin-bottom: 20px;
+            text-align: center;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(255, 0, 127, 0.5);
+            border-bottom: 1px solid rgba(255, 0, 127, 0.3);
+            padding-bottom: 10px;
+        }
+        .fs-modal p {
+            font-size: 13px;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            color: #cbd5e1;
+        }
+        .fs-modal ol {
+            margin-left: 20px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #cbd5e1;
+        }
+        .fs-modal li {
+            margin-bottom: 8px;
+        }
+        .fs-modal-btn {
+            background: rgba(0, 240, 255, 0.08);
+            border: 1px solid var(--neon-cyan);
+            color: var(--neon-cyan);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        .fs-modal-btn:hover {
+            background: rgba(0, 240, 255, 0.2);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+            color: #fff;
+        }
+        .close-fs-modal {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 24px;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+        .close-fs-modal:hover {
+            color: var(--neon-pink);
+        }
     </style>
 </head>
 <body>
@@ -1019,6 +1132,20 @@
         <div id="privacy-modal-content" class="privacy-modal-content">
             <div style="text-align: center; color: var(--neon-cyan); margin: 20px 0;">LOADING PRIVACY PROTOCOL...</div>
         </div>
+    </div>
+
+    <!-- Fullscreen Helper Modal (iOS) -->
+    <div id="fs-modal-overlay" class="fs-modal-overlay"></div>
+    <div id="fs-modal" class="fs-modal">
+        <button id="close-fs-modal" class="close-fs-modal">&times;</button>
+        <h3>FULLSCREEN PROTOCOL</h3>
+        <p>iOS Safari restricts programmatic fullscreen for web applications. To play in borderless fullscreen mode:</p>
+        <ol>
+            <li>Tap the <strong>Share</strong> button in Safari (the box with an upward arrow at the bottom).</li>
+            <li>Scroll down the share sheet and select <strong>'Add to Home Screen'</strong>.</li>
+            <li>Launch <strong>RIGHTSIDERS</strong> from your Home Screen.</li>
+        </ol>
+        <button id="close-fs-modal-btn" class="fs-modal-btn" style="width: 100%;">Acknowledge</button>
     </div>
 
     <header>
@@ -1409,15 +1536,18 @@
                     if (docEl.requestFullscreen) {
                         docEl.requestFullscreen().catch((err) => {
                             console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                            handleFullscreenUnsupported();
                         });
                     } else if (docEl.webkitRequestFullscreen) {
                         try {
                             docEl.webkitRequestFullscreen();
                         } catch (err) {
                             console.warn("Error attempting to enable webkit fullscreen:", err);
+                            handleFullscreenUnsupported();
                         }
                     } else {
                         console.warn("Fullscreen API not supported on this device/browser");
+                        handleFullscreenUnsupported();
                     }
                 } else {
                     if (document.exitFullscreen) {
@@ -1487,6 +1617,29 @@
                 privacyOverlay.addEventListener("click", (e) => {
                     e.stopPropagation();
                     closePrivacyModal();
+                });
+            }
+
+            // Hook up fullscreen helper modal controls
+            const closeFsBtn = document.getElementById("close-fs-modal");
+            if (closeFsBtn) {
+                closeFsBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeFsModal();
+                });
+            }
+            const closeFsBtnVal = document.getElementById("close-fs-modal-btn");
+            if (closeFsBtnVal) {
+                closeFsBtnVal.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeFsModal();
+                });
+            }
+            const fsOverlay = document.getElementById("fs-modal-overlay");
+            if (fsOverlay) {
+                fsOverlay.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeFsModal();
                 });
             }
 
@@ -1598,15 +1751,18 @@
                             if (docEl.requestFullscreen) {
                                 docEl.requestFullscreen().catch((err) => {
                                     console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                                    handleFullscreenUnsupported();
                                 });
                             } else if (docEl.webkitRequestFullscreen) {
                                 try {
                                     docEl.webkitRequestFullscreen();
                                 } catch (err) {
                                     console.warn("Error attempting to enable webkit fullscreen:", err);
+                                    handleFullscreenUnsupported();
                                 }
                             } else {
                                 console.warn("Fullscreen API not supported on this device/browser");
+                                handleFullscreenUnsupported();
                             }
                         }
                     }
@@ -2585,6 +2741,44 @@
         function closePrivacyModal() {
             const overlay = document.getElementById("privacy-modal-overlay");
             const modal = document.getElementById("privacy-modal");
+            if (overlay && modal) {
+                overlay.classList.remove("open");
+                modal.classList.remove("open");
+                setTimeout(() => {
+                    if (!overlay.classList.contains("open")) {
+                        overlay.style.display = "none";
+                        modal.style.display = "none";
+                    }
+                }, 250);
+            }
+        }
+
+        function handleFullscreenUnsupported() {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                          (/Macintosh/.test(navigator.userAgent) && 'ontouchend' in document);
+            // Check if already in standalone mode
+            const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+
+            if (isIOS && !isStandalone) {
+                openFsModal();
+            }
+        }
+
+        function openFsModal() {
+            const overlay = document.getElementById("fs-modal-overlay");
+            const modal = document.getElementById("fs-modal");
+            if (overlay && modal) {
+                overlay.style.display = "block";
+                modal.style.display = "block";
+                void modal.offsetHeight; // force reflow
+                overlay.classList.add("open");
+                modal.classList.add("open");
+            }
+        }
+
+        function closeFsModal() {
+            const overlay = document.getElementById("fs-modal-overlay");
+            const modal = document.getElementById("fs-modal");
             if (overlay && modal) {
                 overlay.classList.remove("open");
                 modal.classList.remove("open");
