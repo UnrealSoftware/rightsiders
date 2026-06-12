@@ -78,8 +78,20 @@ impl Raycaster {
         }
     }
 
-    /// Perspective-correct floor casting to render roads, sidewalks, and lane markings
     pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal]) {
+        // Precompute draw_end for each screen column to speed up reflection math
+        let mut draw_ends = [0; WIDTH];
+        for x in 0..WIDTH {
+            let perp_wall_dist = self.z_buffer[x];
+            draw_ends[x] = if perp_wall_dist >= VISIBILITY_DIST {
+                HEIGHT as i32 / 2
+            } else {
+                let line_height = (HEIGHT as f32 / perp_wall_dist) as i32;
+                let pos_z = 0.4_f32;
+                (pos_z * line_height as f32) as i32 + HEIGHT as i32 / 2
+            };
+        }
+
         // Clear the decal grid
         for cell in &mut self.decal_grid {
             cell.clear();
@@ -127,6 +139,13 @@ impl Raycaster {
             let mut floor_y = player_y + row_distance * ray_dir_y0;
 
             for x in 0..WIDTH {
+                // Depth occlusion check: only cast floor if it is closer than the wall in this column
+                if row_distance >= self.z_buffer[x] {
+                    floor_x += floor_step_x;
+                    floor_y += floor_step_y;
+                    continue;
+                }
+
                 // Determine tile coordinate (wrapping on torus)
                 let tx = (floor_x.floor() as i32).rem_euclid(MAP_WIDTH as i32) as usize;
                 let ty = (floor_y.floor() as i32).rem_euclid(MAP_HEIGHT as i32) as usize;
@@ -193,6 +212,21 @@ impl Raycaster {
                         }
                     };
 
+                    // Check if it's a puddle on the road or intersection
+                    let mut is_puddle = false;
+                    if tile == TileType::Road || tile == TileType::Intersection {
+                        let tile_hash = ((tx * 13) + (ty * 37)) % 5 == 0;
+                        if tile_hash {
+                            let cx = tx as f32 + 0.5;
+                            let cy = ty as f32 + 0.5;
+                            let dx = floor_x - cx;
+                            let dy = floor_y - cy;
+                            if dx * dx + dy * dy < 0.12 {
+                                is_puddle = true;
+                            }
+                        }
+                    }
+
                     // Blend blood decals (optimized tile-based mask blending)
                     let mut is_blood = false;
                     let cell_idx = tx * MAP_HEIGHT + ty;
@@ -213,8 +247,55 @@ impl Raycaster {
                     }
 
                     if is_blood {
-                        color = 0x8a0303ff; // Solid cyber dark blood red
+                        color = 0x8a0303ff; // Set base color to blood red before reflection
                     }
+
+                    // Determine wet reflectiveness percentage
+                    let reflect_pct = if is_blood {
+                        50
+                    } else if is_puddle {
+                        60
+                    } else {
+                        15
+                    };
+
+                    // Reconstruct draw_end for this column (using precomputed draw_ends)
+                    let draw_end = draw_ends[x];
+                    let y_reflected = 2 * draw_end - y as i32;
+
+                    // Ripple waves based on cos/sin over time (subtler ripple for lower reflectiveness)
+                    let time = get_time() as f32;
+                    let ripple_mult = if reflect_pct == 60 { 0.015 } else if reflect_pct == 50 { 0.012 } else { 0.005 };
+                    let ripple = ripple_mult * ((floor_x * 12.0 + time * 6.0).sin() + (floor_y * 12.0 - time * 5.0).cos());
+                    let ref_x = (x as f32 + ripple * 45.0) as i32;
+                    let ref_y = (y_reflected as f32 + ripple * 25.0) as i32;
+
+                    let ref_x = ref_x.clamp(0, WIDTH as i32 - 1) as usize;
+                    let ref_y = ref_y.clamp(0, HEIGHT as i32 - 1) as usize;
+
+                    // Fetch the reflected screen color (which already has walls/sky)
+                    let reflected_color = self.pixels[ref_y * WIDTH + ref_x];
+
+                    let r_ref = (reflected_color >> 24) & 0xff;
+                    let g_ref = (reflected_color >> 16) & 0xff;
+                    let b_ref = (reflected_color >> 8) & 0xff;
+
+                    let r_base = (color >> 24) & 0xff;
+                    let g_base = (color >> 16) & 0xff;
+                    let b_base = (color >> 8) & 0xff;
+
+                    let mut r = (r_base * (100 - reflect_pct) + r_ref * reflect_pct) / 100;
+                    let mut g = (g_base * (100 - reflect_pct) + g_ref * reflect_pct) / 100;
+                    let mut b = (b_base * (100 - reflect_pct) + b_ref * reflect_pct) / 100;
+
+                    // Cyberpunk color boost for deep puddles (reflect_pct == 60)
+                    if reflect_pct == 60 {
+                        r = (r as f32 * 0.85) as u32;
+                        g = (g as f32 * 0.95) as u32;
+                        b = (b as f32 * 1.15) as u32;
+                    }
+
+                    color = (r.min(255) << 24) | (g.min(255) << 16) | (b.min(255) << 8) | 0xff;
 
                     // Apply distance fog to the pixel (optimized integer math)
                     if fog_int < 256 {

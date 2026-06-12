@@ -206,6 +206,14 @@ pub struct MenuShockwave {
 }
 
 #[derive(Clone)]
+pub struct RainDrop {
+    pub x: f32,
+    pub y: f32,
+    pub speed: f32,
+    pub length: f32,
+}
+
+#[derive(Clone)]
 pub struct Particle {
     pub x: f32,
     pub y: f32,
@@ -591,6 +599,7 @@ pub struct GameState {
     pub missiles: Vec<GuidedMissile>,
     pub missile_used: bool,
     pub vehicles: Vec<Vehicle>,
+    pub rain_drops: Vec<RainDrop>,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -632,7 +641,7 @@ impl GameState {
             view_angle: std::f32::consts::FRAC_PI_2,
         };
 
-        let state = Self {
+        let mut state = Self {
             player,
             citizens: Vec::new(),
             lasers: Vec::new(),
@@ -671,8 +680,23 @@ impl GameState {
             missiles: Vec::new(),
             missile_used: false,
             vehicles: Vec::new(),
+            rain_drops: Vec::new(),
             rng_state: 123456789,
         };
+
+        // Initialize rain drops using deterministic RNG
+        for _ in 0..120 {
+            let rx = rng_float(&mut state.rng_state) * 400.0;
+            let ry = rng_float(&mut state.rng_state) * 300.0;
+            let speed = 400.0 + rng_float(&mut state.rng_state) * 200.0;
+            let length = 10.0 + rng_float(&mut state.rng_state) * 8.0;
+            state.rain_drops.push(RainDrop {
+                x: rx,
+                y: ry,
+                speed,
+                length,
+            });
+        }
 
         // Notify JS menu is active
         update_menu_active_js(true);
@@ -1823,6 +1847,23 @@ impl GameState {
             self.player.target_idx = None;
         } else {
             self.update_scanner_target();
+        }
+
+        // Update raindrops
+        let width_f = 400.0_f32;
+        let height_f = 300.0_f32;
+        for drop in &mut self.rain_drops {
+            drop.y += drop.speed * dt;
+            drop.x -= 20.0 * dt; // slight wind angle to the left
+            if drop.y > height_f {
+                drop.y = -drop.length; // start just above screen
+                drop.x = rng_float(&mut self.rng_state) * width_f;
+                drop.speed = 400.0 + rng_float(&mut self.rng_state) * 200.0;
+                drop.length = 10.0 + rng_float(&mut self.rng_state) * 8.0;
+            }
+            if drop.x < 0.0 {
+                drop.x += width_f;
+            }
         }
     }
 

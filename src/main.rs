@@ -968,19 +968,7 @@ async fn main() {
             .copied()
             .collect();
 
-        // 1. Cast Floor & Sidewalk markings
-        raycaster.cast_floor(
-            state.player.x,
-            state.player.y,
-            state.player.dir_x,
-            state.player.dir_y,
-            state.player.plane_x,
-            state.player.plane_y,
-            &state.map,
-            &close_decals,
-        );
-
-        // 2. Cast building walls
+        // 1. Cast building walls (must be cast before floor for screen-space reflections)
         raycaster.cast_walls(
             state.player.x,
             state.player.y,
@@ -990,6 +978,18 @@ async fn main() {
             state.player.plane_y,
             &state.map,
             &assets_data,
+        );
+
+        // 2. Cast Floor & Sidewalk markings
+        raycaster.cast_floor(
+            state.player.x,
+            state.player.y,
+            state.player.dir_x,
+            state.player.dir_y,
+            state.player.plane_x,
+            state.player.plane_y,
+            &state.map,
+            &close_decals,
         );
 
         // 3. Populate sprite list for raycasting
@@ -1160,6 +1160,16 @@ async fn main() {
                 draw_circle(s.0, s.1, 4.0, WHITE);
                 draw_circle(e.0, e.1, 4.0, WHITE);
             }
+        }
+
+        // Draw low-res screen-space rain overlay
+        let rain_color = Color::new(0.55, 0.82, 0.95, 0.28); // Translucent bluish cyberpunk rain
+        for drop in &state.rain_drops {
+            let sx = drop.x;
+            let sy = drop.y;
+            let ex = sx - 1.5; // slight wind slant
+            let ey = sy + drop.length;
+            draw_line(sx, sy, ex, ey, 1.0, rain_color);
         }
 
 
