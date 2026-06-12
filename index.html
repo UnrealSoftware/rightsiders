@@ -23,6 +23,14 @@
             padding: 0;
         }
 
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             background-color: var(--bg-dark);
             background-image: 
@@ -30,8 +38,6 @@
                 radial-gradient(at 100% 100%, rgba(0, 240, 255, 0.05) 0px, transparent 50%);
             color: #e2e8f0;
             font-family: 'Share Tech Mono', monospace;
-            overflow-x: hidden;
-            min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
@@ -172,6 +178,8 @@
             opacity: 0;
             transform: translateY(-10px);
             pointer-events: none;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
         }
         .collapsible-hud.open {
             opacity: 1;
@@ -460,14 +468,19 @@
             padding: 24px;
             z-index: 10000;
             width: 340px;
+            max-width: 90vw;
+            max-height: 90vh;
+            flex-direction: column;
             font-family: 'Share Tech Mono', monospace;
             color: #fff;
             opacity: 0;
+            pointer-events: none;
             transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .music-modal.open {
-            display: block;
+            display: flex !important;
             opacity: 1;
+            pointer-events: auto;
             transform: translate(-50%, -50%) scale(1);
         }
         .music-modal h3 {
@@ -482,12 +495,28 @@
             text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
             border-bottom: 1px dashed rgba(0, 240, 255, 0.3);
             padding-bottom: 10px;
+            flex-shrink: 0;
         }
         .track-list {
             display: flex;
             flex-direction: column;
             gap: 12px;
             margin-bottom: 20px;
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-right: 4px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--neon-cyan) rgba(0, 0, 0, 0.2);
+        }
+        .track-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .track-list::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .track-list::-webkit-scrollbar-thumb {
+            background: var(--neon-cyan);
+            border-radius: 2px;
         }
         .track-item {
             padding: 12px 14px;
@@ -554,10 +583,325 @@
             text-shadow: 0 0 5px rgba(255, 0, 127, 0.5);
         }
 
-        /* Media query to hide header, footer, help controls on mobile */
+        /* Responsive spacing for short heights (like mobile landscape) */
+        @media (max-height: 520px) {
+            .music-modal {
+                padding: 16px;
+                width: 320px;
+            }
+            .music-modal h3 {
+                margin-bottom: 12px;
+                font-size: 16px;
+                padding-bottom: 8px;
+            }
+            .track-list {
+                gap: 8px;
+                margin-bottom: 12px;
+            }
+            .track-item {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+            .stop-music-btn {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+
+            .privacy-modal {
+                padding: 16px;
+            }
+            .privacy-modal h3 {
+                margin-bottom: 12px;
+                font-size: 16px;
+                padding-bottom: 8px;
+            }
+        }
+
+        /* Privacy Modal styling */
+        .privacy-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 8, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        .privacy-modal-overlay.open {
+            display: block;
+            opacity: 1;
+        }
+        .privacy-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            background: rgba(10, 15, 25, 0.98);
+            border: 2px solid var(--neon-cyan);
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.35), inset 0 0 15px rgba(0, 240, 255, 0.1);
+            border-radius: 6px;
+            padding: 24px;
+            z-index: 10000;
+            width: 600px;
+            max-width: 90vw;
+            max-height: 85vh;
+            flex-direction: column;
+            font-family: 'Share Tech Mono', monospace;
+            color: #fff;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .privacy-modal.open {
+            display: flex !important;
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .privacy-modal h3 {
+            color: var(--neon-cyan);
+            margin-top: 0;
+            margin-bottom: 20px;
+            text-align: center;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+            border-bottom: 1px dashed rgba(0, 240, 255, 0.3);
+            padding-bottom: 10px;
+            flex-shrink: 0;
+        }
+        .privacy-modal-content {
+            overflow-y: auto;
+            flex-grow: 1;
+            padding-right: 8px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #94a3b8;
+            scrollbar-width: thin;
+            scrollbar-color: var(--neon-cyan) rgba(0, 0, 0, 0.2);
+        }
+        .privacy-modal-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        .privacy-modal-content::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .privacy-modal-content::-webkit-scrollbar-thumb {
+            background: var(--neon-cyan);
+            border-radius: 3px;
+        }
+        .close-privacy-modal {
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            font-size: 20px;
+            transition: color 0.2s ease;
+            z-index: 10001;
+        }
+        .close-privacy-modal:hover {
+            color: var(--neon-pink);
+            text-shadow: 0 0 5px rgba(255, 0, 127, 0.5);
+        }
+        .privacy-modal-content h1, 
+        .privacy-modal-content h2, 
+        .privacy-modal-content h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--neon-pink);
+            margin-top: 18px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 0 0 6px rgba(255, 0, 127, 0.4);
+        }
+        .privacy-modal-content h2 {
+            font-size: 15px;
+            border-bottom: 1px dashed rgba(255, 0, 127, 0.2);
+            padding-bottom: 4px;
+        }
+        .privacy-modal-content h3 {
+            font-size: 13px;
+            color: var(--neon-cyan);
+            text-shadow: 0 0 6px rgba(0, 240, 255, 0.4);
+        }
+        .privacy-modal-content p {
+            margin-bottom: 12px;
+        }
+        .privacy-modal-content ul {
+            margin-bottom: 12px;
+            padding-left: 20px;
+            list-style-type: square;
+        }
+        .privacy-modal-content li {
+            margin-bottom: 4px;
+        }
+        .privacy-modal-content strong {
+            color: #fff;
+        }
+        .privacy-modal-content .highlight-box {
+            font-size: 12px;
+            line-height: 1.5;
+            color: #94a3b8;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 12px;
+            border-left: 3px solid var(--neon-green);
+            border-radius: 0 4px 4px 0;
+            box-shadow: inset 0 0 10px rgba(57, 255, 20, 0.05);
+            margin-bottom: 15px;
+        }
+        .privacy-modal-content .highlight-box strong {
+            color: var(--neon-green);
+        }
+        .privacy-modal-content .back-btn {
+            display: none;
+        }
+        .privacy-modal-content header {
+            display: none;
+        }
+        .privacy-modal-content .crt-overlay,
+        .privacy-modal-content .crt-scanlines {
+            display: none;
+        }
+        .privacy-modal-content .container {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            max-width: none;
+        }
+        .privacy-modal-content .control-panel {
+            background: none;
+            border: none;
+            padding: 0;
+            box-shadow: none;
+            backdrop-filter: none;
+            gap: 15px;
+        }
+        .privacy-modal-content a {
+            color: var(--neon-cyan);
+            text-decoration: none;
+        }
+        .privacy-modal-content a:hover {
+            text-decoration: underline;
+        }
+
+        /* Media query to hide header, footer on mobile */
         @media (max-width: 768px), (pointer: coarse) {
-            header, footer, #toggle-help, #help-overlay, #toggle-fullscreen {
+            header, footer {
                 display: none !important;
+            }
+        }
+
+        /* Default: hide mobile controls on desktop */
+        .mobile-only-control {
+            display: none !important;
+        }
+
+        /* Mobile specific controls display */
+        @media (max-width: 768px), (pointer: coarse) {
+            .desktop-only-control {
+                display: none !important;
+            }
+            .mobile-only-control {
+                display: flex !important;
+            }
+        }
+
+        /* Help Modal Close Button (hidden on desktop) */
+        .close-help-modal {
+            display: none;
+            position: absolute;
+            top: 10px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+            font-size: 20px;
+            transition: color 0.2s ease;
+            z-index: 10001;
+        }
+        .close-help-modal:hover {
+            color: var(--neon-pink);
+            text-shadow: 0 0 5px rgba(255, 0, 127, 0.5);
+        }
+
+        #help-overlay {
+            scrollbar-width: thin;
+            scrollbar-color: var(--neon-cyan) rgba(0, 0, 0, 0.2);
+        }
+        #help-overlay::-webkit-scrollbar {
+            width: 6px;
+        }
+        #help-overlay::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        #help-overlay::-webkit-scrollbar-thumb {
+            background: var(--neon-cyan);
+            border-radius: 3px;
+        }
+
+        /* Mobile layout for help overlay modal */
+        @media (max-width: 768px), (pointer: coarse) {
+            #help-overlay {
+                position: fixed !important;
+                top: 50% !important;
+                right: auto !important;
+                left: 50% !important;
+                transform: translate(-50%, -50%) scale(0.9) !important;
+                width: 360px !important;
+                max-width: 90vw !important;
+                max-height: 85vh !important;
+                overflow-y: auto !important;
+                z-index: 10000 !important;
+                background: rgba(10, 15, 25, 0.98) !important;
+                border: 2px solid var(--neon-cyan) !important;
+                box-shadow: 0 0 30px rgba(0, 240, 255, 0.35), inset 0 0 15px rgba(0, 240, 255, 0.1) !important;
+                padding: 24px !important;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 15px !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+            }
+            #help-overlay.open {
+                opacity: 1 !important;
+                transform: translate(-50%, -50%) scale(1) !important;
+                pointer-events: auto !important;
+            }
+            .close-help-modal {
+                display: block !important;
+            }
+        }
+
+        /* Help modal overlay backdrop */
+        .help-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 5, 8, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        @media (max-width: 768px), (pointer: coarse) {
+            .help-modal-overlay.open {
+                display: block !important;
+                opacity: 1 !important;
             }
         }
 
@@ -661,6 +1005,16 @@
         <button id="stop-music-btn" class="stop-music-btn" style="width: 100%;">STOP MUSIC</button>
     </div>
 
+    <!-- Privacy Modal -->
+    <div id="privacy-modal-overlay" class="privacy-modal-overlay"></div>
+    <div id="privacy-modal" class="privacy-modal">
+        <button id="close-privacy-modal" class="close-privacy-modal">&times;</button>
+        <h3>PRIVACY DIRECTIVE</h3>
+        <div id="privacy-modal-content" class="privacy-modal-content">
+            <div style="text-align: center; color: var(--neon-cyan); margin: 20px 0;">LOADING PRIVACY PROTOCOL...</div>
+        </div>
+    </div>
+
     <header>
         <div class="logo">
             RIGHT<span>SIDERS</span> <span style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px;">
@@ -679,11 +1033,11 @@
         <div class="simulator-viewport">
             <div id="loading">
                 <div class="loader-terminal">
-                    <div id="startup-text-container"></div>
+                    <div id="startup-text-container" style="pointer-events: none;"></div>
                     <div class="loader-bar-container">
                         <div class="loader-bar"></div>
                     </div>
-                    <div class="audio-warning-text" style="text-align: center; color: #64748b; font-size: 11px; margin-top: 15px; font-family: 'Share Tech Mono', monospace; text-shadow: none;">Attention: Will play music and sound effects!</div>
+                    <div class="audio-warning-text" style="text-align: center; color: #64748b; font-size: 11px; margin-top: 15px; font-family: 'Share Tech Mono', monospace; text-shadow: none; pointer-events: none;">Attention: Will play music and sound effects!</div>
                 </div>
             </div>
 
@@ -692,41 +1046,50 @@
             <canvas id="glcanvas" tabindex="1" style="outline: none;"></canvas>
         </div>
 
-        <button id="toggle-help" class="hud-btn">CONTROLS [H]</button>
-        <button id="toggle-fullscreen" class="hud-btn" style="bottom: 45px;">FULLSCREEN [F]</button>
-
-        <div id="help-overlay" class="control-panel collapsible-hud">
-            <div>
-                <h2>Directive</h2>
-                <div class="lore-box">
-                    City of Apex Prime, year 2087. You are law enforcement unit KX-128#67. Ensure all citizens walk in their <strong>RIGHT-HAND LANE</strong> relative to their movement direction. If a citizen wanders onto the <strong>LEFT-HAND SIDE</strong> of the centerline, they are in violation of Civic Code 99-A. Target them with your biometric scanner and execute immediately.
-                </div>
-            </div>
-
-            <div>
-                <h2>Controls</h2>
-                <ul class="instruction-list">
-                    <li class="instruction-item">
-                        <span>Switch Lane</span>
-                        <span><kbd class="key-badge">A</kbd> / <kbd class="key-badge">D</kbd></span>
-                    </li>
-
-                    <li class="instruction-item">
-                        <span>Fire Blaster</span>
-                        <span><kbd class="key-badge">SPACE</kbd></span>
-                    </li>
-                    <li class="instruction-item">
-                        <span>Rocket (1x)</span>
-                        <span><kbd class="key-badge">R</kbd></span>
-                    </li>
-                </ul>
-            </div>
-
-            <div class="compliance-directive">
-                <strong>REMINDER:</strong>
-                Collateral damage is penalized. Shooting compliant citizens will result in budget penalty. Maintain 100% vigilance!
+    <!-- Help Modal Overlay Backdrop -->
+    <div id="help-modal-overlay" class="help-modal-overlay"></div>
+    
+    <div id="help-overlay" class="control-panel collapsible-hud">
+        <button id="close-help-modal" class="close-help-modal">&times;</button>
+        <div>
+            <h2>Directive</h2>
+            <div class="lore-box">
+                City of Apex Prime, year 2087. You are law enforcement unit KX-128#67. Ensure all citizens walk in their <strong>RIGHT-HAND LANE</strong> relative to their movement direction. If a citizen wanders onto the <strong>LEFT-HAND SIDE</strong> of the centerline, they are in violation of Civic Code 99-A. Target them with your biometric scanner and execute immediately.
             </div>
         </div>
+
+        <div>
+            <h2>Controls</h2>
+            <ul class="instruction-list">
+                <li class="instruction-item desktop-only-control">
+                    <span>Switch Lane</span>
+                    <span><kbd class="key-badge">A</kbd> / <kbd class="key-badge">D</kbd></span>
+                </li>
+                <li class="instruction-item mobile-only-control">
+                    <span>Switch Lane</span>
+                    <span class="key-badge">Swipe</span>
+                </li>
+
+                <li class="instruction-item desktop-only-control">
+                    <span>Fire Blaster</span>
+                    <span><kbd class="key-badge">SPACE</kbd></span>
+                </li>
+                <li class="instruction-item mobile-only-control">
+                    <span>Fire Blaster</span>
+                    <span class="key-badge">Touch</span>
+                </li>
+                <li class="instruction-item desktop-only-control">
+                    <span>Rocket (1x)</span>
+                    <span><kbd class="key-badge">R</kbd></span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="compliance-directive">
+            <strong>REMINDER:</strong>
+            Collateral damage is penalized. Shooting compliant citizens will result in budget penalty. Maintain 100% vigilance!
+        </div>
+    </div>
         
 
     </main>
@@ -760,9 +1123,23 @@
         let mobileHighscoreName = "";
         let mobileHighscoreSubmitted = false;
         let gameStarted = false;
+        let toggleHelp = () => {};
+        let toggleFullscreen = () => {};
 
         function isMobileDevice() {
-            return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const uaCheck = /Mobi|Android|iPhone|iPad|iPod|Windows Phone|Kindle|Opera Mini|Tablet/i.test(navigator.userAgent);
+            const sizeCheck = window.innerWidth <= 1024 || window.screen.width <= 1024 || window.innerHeight <= 700 || window.screen.height <= 700;
+            const touchCheck = window.matchMedia("(pointer: coarse)").matches 
+                || ('ontouchstart' in window) 
+                || (navigator.maxTouchPoints > 0)
+                || (navigator.msMaxTouchPoints > 0);
+            
+            // Only classify as mobile if it has a mobile user agent OR it has a small screen/viewport.
+            // A large touch-screen desktop monitor (e.g. 2560x1920 with touch support) is treated as desktop.
+            const isMobile = uaCheck || sizeCheck;
+            
+            console.log("[isMobileDevice] Result:", isMobile, "| UA:", uaCheck, "| Size Check:", sizeCheck, "| Touch Check:", touchCheck, "| Viewport:", window.innerWidth, "x", window.innerHeight);
+            return isMobile;
         }
 
         // JS Touch control variables
@@ -947,19 +1324,42 @@
             }
 
             // Handle controls panel toggle
-            const toggleBtn = document.getElementById("toggle-help");
             const helpOverlay = document.getElementById("help-overlay");
+            const helpOverlayBackdrop = document.getElementById("help-modal-overlay");
             
-            function toggleHelp() {
+            toggleHelp = () => {
                 if (enteringHighscore) return;
-                if (helpOverlay) helpOverlay.classList.toggle("open");
+                if (!helpOverlay) return;
+                
+                const isOpen = helpOverlay.classList.contains("open");
+                if (isOpen) {
+                    closeHelp();
+                } else {
+                    openHelp();
+                }
+            };
+
+            function openHelp() {
+                if (helpOverlay) helpOverlay.classList.add("open");
+                if (helpOverlayBackdrop) helpOverlayBackdrop.classList.add("open");
+            }
+
+            function closeHelp() {
+                if (helpOverlay) helpOverlay.classList.remove("open");
+                if (helpOverlayBackdrop) helpOverlayBackdrop.classList.remove("open");
             }
             
-            if (toggleBtn) {
-                toggleBtn.addEventListener("click", (e) => {
-                    if (enteringHighscore) return;
+            const closeHelpBtn = document.getElementById("close-help-modal");
+            if (closeHelpBtn) {
+                closeHelpBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
-                    toggleHelp();
+                    closeHelp();
+                });
+            }
+            if (helpOverlayBackdrop) {
+                helpOverlayBackdrop.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeHelp();
                 });
             }
             
@@ -970,10 +1370,7 @@
                 }
             });
 
-            // Handle fullscreen toggle
-            const toggleFSBtn = document.getElementById("toggle-fullscreen");
-            
-            function toggleFullscreen() {
+            toggleFullscreen = () => {
                 if (enteringHighscore) return;
                 if (!document.fullscreenElement) {
                     document.documentElement.requestFullscreen().catch((err) => {
@@ -982,15 +1379,7 @@
                 } else {
                     document.exitFullscreen();
                 }
-            }
-            
-            if (toggleFSBtn) {
-                toggleFSBtn.addEventListener("click", (e) => {
-                    if (enteringHighscore) return;
-                    e.stopPropagation();
-                    toggleFullscreen();
-                });
-            }
+            };
             
             window.addEventListener("keydown", (e) => {
                 if (enteringHighscore) return;
@@ -1032,17 +1421,21 @@
                 });
             }
 
-            // Open controls on start, then close after 6 seconds (if not in menu)
-            setTimeout(() => {
-                if (helpOverlay) {
-                    helpOverlay.classList.add("open");
-                    setTimeout(() => {
-                        if (!menuActive) {
-                            helpOverlay.classList.remove("open");
-                        }
-                    }, 6000);
-                }
-            }, 100);
+            // Hook up privacy modal controls
+            const closePrivacyBtn = document.getElementById("close-privacy-modal");
+            if (closePrivacyBtn) {
+                closePrivacyBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closePrivacyModal();
+                });
+            }
+            const privacyOverlay = document.getElementById("privacy-modal-overlay");
+            if (privacyOverlay) {
+                privacyOverlay.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closePrivacyModal();
+                });
+            }
 
             // Startup typewriter sequence
             const startupLines = [
@@ -1113,6 +1506,9 @@
                 startBtn.style.letterSpacing = "2px";
                 startBtn.style.animation = "startBlink 0.13s infinite alternate"; // 3x faster intense blink
                 startBtn.style.transition = "all 0.2s ease";
+                startBtn.style.position = "relative";
+                startBtn.style.zIndex = "105";
+                startBtn.style.pointerEvents = "auto";
                 startBtn.textContent = "[ CLICK TO START ]";
 
                 const terminal = document.querySelector(".loader-terminal");
@@ -1220,6 +1616,18 @@
                     const soundType = UTF8ToString(ptr, len);
                     playSound(soundType);
                 };
+                importObject.env.open_privacy_modal_js = () => {
+                    openPrivacyModal();
+                };
+                importObject.env.open_music_modal_js = () => {
+                    openMusicModal();
+                };
+                importObject.env.toggle_help_js = () => {
+                    toggleHelp();
+                };
+                importObject.env.toggle_fullscreen_js = () => {
+                    toggleFullscreen();
+                };
                 importObject.env.is_game_started_js = () => {
                     return gameStarted;
                 };
@@ -1227,7 +1635,8 @@
                     menuActive = active ? true : false;
                     const helpOverlay = document.getElementById("help-overlay");
                     if (helpOverlay) {
-                        if (menuActive) {
+                        // On startup, we only auto-open the help overlay on desktop, not on mobile
+                        if (menuActive && !isMobileDevice()) {
                             helpOverlay.classList.add("open");
                         } else {
                             helpOverlay.classList.remove("open");
@@ -1253,16 +1662,14 @@
                 importObject.env.set_entering_highscore_js = (entering) => {
                     enteringHighscore = entering ? true : false;
                     const helpOverlay = document.getElementById("help-overlay");
-                    const toggleHelpBtn = document.getElementById("toggle-help");
-                    const toggleFSBtn = document.getElementById("toggle-fullscreen");
+                    const helpOverlayBackdrop = document.getElementById("help-modal-overlay");
                     const mobileOverlay = document.getElementById("mobile-highscore-overlay");
                     const mobileInput = document.getElementById("mobile-highscore-input");
                     
                     if (enteringHighscore) {
                         if (helpOverlay) helpOverlay.classList.remove("open");
-                        if (toggleHelpBtn) toggleHelpBtn.style.display = "none";
-                        if (toggleFSBtn) toggleFSBtn.style.display = "none";
-
+                        if (helpOverlayBackdrop) helpOverlayBackdrop.classList.remove("open");
+ 
                         // Check if we are on a mobile/touch device
                         const isMobile = isMobileDevice();
                         if (isMobile && mobileOverlay && mobileInput) {
@@ -1275,10 +1682,9 @@
                             }, 100);
                         }
                     } else {
-                        if (toggleHelpBtn) toggleHelpBtn.style.display = "block";
-                        if (toggleFSBtn) toggleFSBtn.style.display = "block";
-                        if (menuActive && helpOverlay) {
+                        if (menuActive && helpOverlay && !isMobileDevice()) {
                             helpOverlay.classList.add("open");
+                            // Don't auto-open backdrop when exiting highscore entry, only when toggled manually
                         }
                         if (mobileOverlay) {
                             mobileOverlay.style.display = "none";
@@ -1980,6 +2386,98 @@
         function closeMusicModal() {
             const overlay = document.getElementById("music-modal-overlay");
             const modal = document.getElementById("music-modal");
+            if (overlay && modal) {
+                overlay.classList.remove("open");
+                modal.classList.remove("open");
+                setTimeout(() => {
+                    if (!overlay.classList.contains("open")) {
+                        overlay.style.display = "none";
+                        modal.style.display = "none";
+                    }
+                }, 250);
+            }
+        }
+
+        let privacyLoaded = false;
+        let privacyHtmlContent = "";
+
+        window.revealAndEmail = function(el) {
+            const user = el.innerText || el.textContent;
+            const domain = "peterschauss.de";
+            const email = user + "@" + domain;
+            window.location.href = "mailto:" + email;
+        };
+
+        function openPrivacyModal() {
+            const overlay = document.getElementById("privacy-modal-overlay");
+            const modal = document.getElementById("privacy-modal");
+            const contentDiv = document.getElementById("privacy-modal-content");
+
+            if (!overlay || !modal || !contentDiv) return;
+
+            overlay.style.display = "block";
+            modal.style.display = "block";
+
+            // Force reflow
+            void modal.offsetHeight;
+
+            overlay.classList.add("open");
+            modal.classList.add("open");
+
+            if (!privacyLoaded) {
+                fetch("privacy.html")
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error("Network response was not ok");
+                        }
+                        return response.text();
+                    })
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, "text/html");
+                        const container = doc.querySelector(".container");
+                        if (container) {
+                            // Strip the back button
+                            const backBtn = container.querySelector(".back-btn");
+                            if (backBtn) backBtn.remove();
+                            
+                            // Get control-panel contents
+                            const controlPanel = container.querySelector(".control-panel");
+                            if (controlPanel) {
+                                // Strip the <h1>Privacy Policy</h1> because our header already has it
+                                const h1 = controlPanel.querySelector("h1");
+                                if (h1) h1.remove();
+
+                                privacyHtmlContent = controlPanel.innerHTML;
+                            } else {
+                                privacyHtmlContent = container.innerHTML;
+                            }
+                        } else {
+                            privacyHtmlContent = html;
+                        }
+                        
+                        contentDiv.innerHTML = privacyHtmlContent;
+                        privacyLoaded = true;
+                    })
+                    .catch(error => {
+                        console.error("Error loading privacy page:", error);
+                        contentDiv.innerHTML = `
+                            <div style="color: var(--neon-pink); text-align: center; padding: 20px;">
+                                <strong>ERROR LOADING PRIVACY PROTOCOL</strong><br>
+                                <span style="font-size: 11px; color: #64748b;">${error.message}</span>
+                                <br><br>
+                                <a href="privacy.html" target="_blank" style="color: var(--neon-cyan); border: 1px solid var(--neon-cyan); padding: 6px 12px; border-radius: 4px; display: inline-block; margin-top: 10px; font-family: 'Orbitron', sans-serif; font-size: 11px; text-decoration: none;">OPEN DIRECTLY</a>
+                            </div>
+                        `;
+                    });
+            } else {
+                contentDiv.innerHTML = privacyHtmlContent;
+            }
+        }
+
+        function closePrivacyModal() {
+            const overlay = document.getElementById("privacy-modal-overlay");
+            const modal = document.getElementById("privacy-modal");
             if (overlay && modal) {
                 overlay.classList.remove("open");
                 modal.classList.remove("open");

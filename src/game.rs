@@ -16,6 +16,10 @@ unsafe extern "C" {
     fn js_get_switch_lane_right_js() -> bool;
     fn js_get_trigger_fire_js() -> bool;
     fn js_get_trigger_missile_js() -> bool;
+    fn open_privacy_modal_js();
+    fn open_music_modal_js();
+    fn toggle_help_js();
+    fn toggle_fullscreen_js();
 }
 
 pub fn play_sound(name: &str) {
@@ -2076,5 +2080,49 @@ impl GameState {
             }
         }
         scores
+    }
+}
+
+pub fn open_privacy_modal() {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        open_privacy_modal_js();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[open_privacy_modal]");
+    }
+}
+
+pub fn open_music_modal() {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        open_music_modal_js();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[open_music_modal]");
+    }
+}
+
+pub fn toggle_help() {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        toggle_help_js();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[toggle_help]");
+    }
+}
+
+pub fn toggle_fullscreen() {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        toggle_fullscreen_js();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[toggle_fullscreen]");
     }
 }

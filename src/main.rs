@@ -137,6 +137,28 @@ fn draw_pixel_rect_lines(x: f32, y: f32, w: f32, h: f32, thickness: f32, color: 
     draw_rectangle(x + w - t, y, t, h, color);
 }
 
+// Helper to draw a pixel-art double note icon
+fn draw_music_note_icon(x: f32, y: f32, size: f32, color: Color) {
+    let u = size / 8.0;
+    // Left note head
+    draw_rectangle(x + 1.0 * u, y + 5.0 * u, 2.0 * u, 2.0 * u, color);
+    // Right note head
+    draw_rectangle(x + 5.0 * u, y + 4.0 * u, 2.0 * u, 2.0 * u, color);
+    // Left stem
+    draw_rectangle(x + 2.0 * u, y + 1.0 * u, 1.0 * u, 4.0 * u, color);
+    // Right stem
+    draw_rectangle(x + 6.0 * u, y + 0.0 * u, 1.0 * u, 4.0 * u, color);
+    // Beam (slanted)
+    draw_rectangle(x + 2.0 * u, y + 1.0 * u, 3.0 * u, 1.0 * u, color);
+    draw_rectangle(x + 5.0 * u, y + 0.0 * u, 2.0 * u, 1.0 * u, color);
+}
+
+// Helper to draw a retro hollow square fullscreen icon
+fn draw_fullscreen_icon(x: f32, y: f32, size: f32, color: Color) {
+    let thickness = (size * 0.15).max(1.0);
+    draw_pixel_rect_lines(x, y, size, size, thickness, color);
+}
+
 // Helper to draw an outline circle on a SpriteTexture (midpoint circle algorithm)
 fn draw_circle_outline(sprite: &mut SpriteTexture, cx: i32, cy: i32, radius: i32, color: u32) {
     let mut x = radius;
@@ -385,6 +407,25 @@ async fn main() {
                     let hover_highscore = mx >= h_bx && mx <= h_bx + max_btn_w && my >= h_by && my <= h_by + btn_h;
                     let hover_level = mx >= l_bx && mx <= l_bx + max_btn_w && my >= l_by && my <= l_by + btn_h;
 
+                    let bottom_btn_size = 24.0 * ui_scale;
+                    let margin_left = 20.0 * ui_scale;
+                    let margin_bottom = 20.0 * ui_scale;
+                    let margin_right = 20.0 * ui_scale;
+                    let info_bx = view_x + margin_left;
+                    let info_by = view_y + view_h - margin_bottom - bottom_btn_size;
+                    let music_bx = info_bx + bottom_btn_size + 10.0 * ui_scale;
+                    let music_by = info_by;
+
+                    let fs_bx = view_x + view_w - margin_right - bottom_btn_size;
+                    let fs_by = info_by;
+                    let help_bx = fs_bx - bottom_btn_size - 10.0 * ui_scale;
+                    let help_by = info_by;
+
+                    let hover_info = mx >= info_bx && mx <= info_bx + bottom_btn_size && my >= info_by && my <= info_by + bottom_btn_size;
+                    let hover_music = mx >= music_bx && mx <= music_bx + bottom_btn_size && my >= music_by && my <= music_by + bottom_btn_size;
+                    let hover_help = mx >= help_bx && mx <= help_bx + bottom_btn_size && my >= help_by && my <= help_by + bottom_btn_size;
+                    let hover_fs = mx >= fs_bx && mx <= fs_bx + bottom_btn_size && my >= fs_by && my <= fs_by + bottom_btn_size;
+
                     if hover_play {
                         if state.menu_selected_idx != 0 {
                             state.menu_selected_idx = 0;
@@ -403,30 +444,55 @@ async fn main() {
                     }
 
                     // Trigger Selection
-                    let trigger_select = is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) || 
-                        is_mouse_button_pressed(MouseButton::Left);
+                    let mouse_clicked = is_mouse_button_pressed(MouseButton::Left);
+                    let trigger_select = is_key_pressed(KeyCode::Space) || is_key_pressed(KeyCode::Enter) || mouse_clicked;
 
                     if trigger_select {
-                        if hover_play { state.menu_selected_idx = 0; }
-                        else if hover_highscore { state.menu_selected_idx = 1; }
-                        else if hover_level { state.menu_selected_idx = 2; }
-
-                        if state.menu_selected_idx == 0 {
-                            state.is_in_menu = false;
-                            state.menu_timer = 0.0; // reset menu timer to 0 on exit
-                            state.menu_shockwaves.clear();
-                            game::update_menu_active_js(false);
-                            game::play_sound("explosion"); // Boom play start sound
-                        } else if state.menu_selected_idx == 1 {
-                            state.leaderboard_data = state.load_leaderboard_rust();
-                            state.is_entering_highscore = false;
-                            state.show_leaderboard = true;
-                            state.is_in_menu = false; // deactivate menu to show leaderboard overlay
-                            state.menu_timer = 0.0; // reset menu timer to 0 on exit
-                            state.menu_shockwaves.clear();
-                            game::play_sound("explosion");
+                        if mouse_clicked && hover_info {
+                            game::play_sound("laser");
+                            game::open_privacy_modal();
+                        } else if mouse_clicked && hover_music {
+                            game::play_sound("laser");
+                            game::open_music_modal();
+                        } else if mouse_clicked && hover_help {
+                            game::play_sound("laser");
+                            game::toggle_help();
+                        } else if mouse_clicked && hover_fs {
+                            game::play_sound("laser");
+                            game::toggle_fullscreen();
                         } else {
-                            game::play_sound("collateral"); // Error buzz
+                            let mut select_btn = false;
+                            if hover_play {
+                                state.menu_selected_idx = 0;
+                                select_btn = true;
+                            } else if hover_highscore {
+                                state.menu_selected_idx = 1;
+                                select_btn = true;
+                            } else if hover_level {
+                                state.menu_selected_idx = 2;
+                                select_btn = true;
+                            }
+
+                            // Only proceed if it was a keyboard trigger or we clicked a valid button
+                            if !mouse_clicked || select_btn {
+                                if state.menu_selected_idx == 0 {
+                                    state.is_in_menu = false;
+                                    state.menu_timer = 0.0; // reset menu timer to 0 on exit
+                                    state.menu_shockwaves.clear();
+                                    game::update_menu_active_js(false);
+                                    game::play_sound("explosion"); // Boom play start sound
+                                } else if state.menu_selected_idx == 1 {
+                                    state.leaderboard_data = state.load_leaderboard_rust();
+                                    state.is_entering_highscore = false;
+                                    state.show_leaderboard = true;
+                                    state.is_in_menu = false; // deactivate menu to show leaderboard overlay
+                                    state.menu_timer = 0.0; // reset menu timer to 0 on exit
+                                    state.menu_shockwaves.clear();
+                                    game::play_sound("explosion");
+                                } else {
+                                    game::play_sound("collateral"); // Error buzz
+                                }
+                            }
                         }
                     }
                 }
@@ -1661,6 +1727,144 @@ async fn main() {
                     btn_font_size,
                     level_text_col,
                     &font,
+                );
+
+                // Draw Info & Music buttons in the bottom left
+                let bottom_btn_size = 24.0 * ui_scale;
+                let margin_left = 20.0 * ui_scale;
+                let margin_bottom = 20.0 * ui_scale;
+                let margin_right = 20.0 * ui_scale;
+                let info_bx = view_x + margin_left;
+                let info_by = view_y + view_h - margin_bottom - bottom_btn_size;
+                let music_bx = info_bx + bottom_btn_size + 10.0 * ui_scale;
+                let music_by = info_by;
+
+                let fs_bx = view_x + view_w - margin_right - bottom_btn_size;
+                let fs_by = info_by;
+                let help_bx = fs_bx - bottom_btn_size - 10.0 * ui_scale;
+                let help_by = info_by;
+
+                let hover_info = mx >= info_bx && mx <= info_bx + bottom_btn_size && my >= info_by && my <= info_by + bottom_btn_size;
+                let hover_music = mx >= music_bx && mx <= music_bx + bottom_btn_size && my >= music_by && my <= music_by + bottom_btn_size;
+                let hover_help = mx >= help_bx && mx <= help_bx + bottom_btn_size && my >= help_by && my <= help_by + bottom_btn_size;
+                let hover_fs = mx >= fs_bx && mx <= fs_bx + bottom_btn_size && my >= fs_by && my <= fs_by + bottom_btn_size;
+
+                // Draw Info Button [I]
+                let info_bg_col = if hover_info {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let info_border_col = if hover_info {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let info_text_col = if hover_info {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(info_bx, info_by, bottom_btn_size, bottom_btn_size, info_bg_col);
+                draw_pixel_rect_lines(info_bx, info_by, bottom_btn_size, bottom_btn_size, 2.0 * ui_scale, info_border_col);
+
+                let info_text = "I";
+                let info_dim = measure_text(info_text, Some(&font), btn_font_size as u16, 1.0);
+                draw_pixel_text(
+                    info_text,
+                    info_bx + bottom_btn_size / 2.0 - info_dim.width / 2.0,
+                    info_by + bottom_btn_size / 2.0 + info_dim.height / 2.0 - 0.5 * ui_scale,
+                    btn_font_size,
+                    info_text_col,
+                    &font,
+                );
+
+                // Draw Music Button [♫]
+                let music_bg_col = if hover_music {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let music_border_col = if hover_music {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let music_icon_col = if hover_music {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(music_bx, music_by, bottom_btn_size, bottom_btn_size, music_bg_col);
+                draw_pixel_rect_lines(music_bx, music_by, bottom_btn_size, bottom_btn_size, 2.0 * ui_scale, music_border_col);
+
+                let icon_size = 10.0 * ui_scale;
+                draw_music_note_icon(
+                    music_bx + bottom_btn_size / 2.0 - icon_size / 2.0,
+                    music_by + bottom_btn_size / 2.0 - icon_size / 2.0,
+                    icon_size,
+                    music_icon_col,
+                );
+
+                // Draw Help Button [H]
+                let help_bg_col = if hover_help {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let help_border_col = if hover_help {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let help_text_col = if hover_help {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(help_bx, help_by, bottom_btn_size, bottom_btn_size, help_bg_col);
+                draw_pixel_rect_lines(help_bx, help_by, bottom_btn_size, bottom_btn_size, 2.0 * ui_scale, help_border_col);
+
+                let help_text = "H";
+                let help_dim = measure_text(help_text, Some(&font), btn_font_size as u16, 1.0);
+                draw_pixel_text(
+                    help_text,
+                    help_bx + bottom_btn_size / 2.0 - help_dim.width / 2.0,
+                    help_by + bottom_btn_size / 2.0 + help_dim.height / 2.0 - 0.5 * ui_scale,
+                    btn_font_size,
+                    help_text_col,
+                    &font,
+                );
+
+                // Draw Fullscreen Button [Square icon]
+                let fs_bg_col = if hover_fs {
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
+                };
+                let fs_border_col = if hover_fs {
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
+                } else {
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
+                };
+                let fs_icon_col = if hover_fs {
+                    WHITE
+                } else {
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
+                };
+
+                draw_rectangle(fs_bx, fs_by, bottom_btn_size, bottom_btn_size, fs_bg_col);
+                draw_pixel_rect_lines(fs_bx, fs_by, bottom_btn_size, bottom_btn_size, 2.0 * ui_scale, fs_border_col);
+
+                let fs_icon_size = 10.0 * ui_scale;
+                draw_fullscreen_icon(
+                    fs_bx + bottom_btn_size / 2.0 - fs_icon_size / 2.0,
+                    fs_by + bottom_btn_size / 2.0 - fs_icon_size / 2.0,
+                    fs_icon_size,
+                    fs_icon_col,
                 );
             }
 
