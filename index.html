@@ -1017,9 +1017,7 @@
 
     <header>
         <div class="logo">
-            RIGHT<span>SIDERS</span> <span style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px;">
-				UNIT KX-128#67 // LAW ENFORCEMENT // APEX PRIME
-			</span>
+            RIGHT<span>SIDERS</span> <span id="unit-hud-text" style="font-size: 14px; color: #64748b; font-weight: normal; margin-left: 10px; font-family: 'Share Tech Mono', monospace;"></span>
         </div>
         <div style="display: flex; align-items: center; gap: 20px;">
             <div id="now-playing" style="font-size: 14px; color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0, 240, 255, 0.5); text-transform: uppercase; letter-spacing: 1.5px; opacity: 0; transition: opacity 0.5s ease; font-family: 'Share Tech Mono', monospace; font-weight: bold;"></div>
@@ -1162,14 +1160,39 @@
                 overlay.style.display = "none";
             }
         }
-        let startupJingle = new Audio('src/assets/rightsiders_startup.ogg');
-        startupJingle.volume = 0.75;
+        let startupJingle = null;
+        try {
+            startupJingle = new Audio('src/assets/rightsiders_startup.mp3');
+            startupJingle.volume = 0.75;
+        } catch (e) {
+            console.warn("Failed to initialize startup jingle audio element:", e);
+        }
         // Set when WASM calls set_menu_active(true) before the user has clicked
         // (no audio context yet, so we defer playback to the startBtn gesture)
         let pendingMenuJingle = false;
 
         // Hide loader when WASM starts and manage canvas focus
-        window.addEventListener('load', () => {
+        function onPageReady() {
+            if (window.__pageReadyInitialized) return;
+            window.__pageReadyInitialized = true;
+            
+            // Typewriter effect for HUD text
+            const hudTextEl = document.getElementById("unit-hud-text");
+            if (hudTextEl) {
+                const originalText = "UNIT KX-128#67 // LAW ENFORCEMENT // APEX PRIME";
+                let charIdx = 0;
+                function typeHudText() {
+                    if (charIdx < originalText.length) {
+                        hudTextEl.textContent = originalText.slice(0, charIdx + 1) + "_";
+                        charIdx++;
+                        setTimeout(typeHudText, 30); // Type speed
+                    } else {
+                        hudTextEl.textContent = originalText;
+                    }
+                }
+                setTimeout(typeHudText, 100);
+            }
+            
             const canvas = document.getElementById("glcanvas");
             if (canvas) {
                 canvas.focus();
@@ -1372,12 +1395,37 @@
 
             toggleFullscreen = () => {
                 if (enteringHighscore) return;
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().catch((err) => {
-                        console.error(`Error attempting to enable fullscreen: ${err.message}`);
-                    });
+                const docEl = document.documentElement;
+                const isCurrentlyFullscreen = document.fullscreenElement || 
+                                              document.webkitFullscreenElement || 
+                                              document.mozFullScreenElement || 
+                                              document.msFullscreenElement;
+                if (!isCurrentlyFullscreen) {
+                    if (docEl.requestFullscreen) {
+                        docEl.requestFullscreen().catch((err) => {
+                            console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                        });
+                    } else if (docEl.webkitRequestFullscreen) {
+                        try {
+                            docEl.webkitRequestFullscreen();
+                        } catch (err) {
+                            console.warn("Error attempting to enable webkit fullscreen:", err);
+                        }
+                    } else {
+                        console.warn("Fullscreen API not supported on this device/browser");
+                    }
                 } else {
-                    document.exitFullscreen();
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.mozCancelFullScreen) {
+                        document.mozCancelFullScreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    } else {
+                        console.warn("Exiting fullscreen is not supported on this device/browser");
+                    }
                 }
             };
             
@@ -1527,10 +1575,25 @@
                     // Automatically switch to fullscreen on mobile devices when starting
                     const isMobile = isMobileDevice();
                     if (isMobile) {
-                        if (!document.fullscreenElement) {
-                            document.documentElement.requestFullscreen().catch((err) => {
-                                console.error(`Error attempting to enable fullscreen: ${err.message}`);
-                            });
+                        const docEl = document.documentElement;
+                        const isCurrentlyFullscreen = document.fullscreenElement || 
+                                                      document.webkitFullscreenElement || 
+                                                      document.mozFullScreenElement || 
+                                                      document.msFullscreenElement;
+                        if (!isCurrentlyFullscreen) {
+                            if (docEl.requestFullscreen) {
+                                docEl.requestFullscreen().catch((err) => {
+                                    console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                                });
+                            } else if (docEl.webkitRequestFullscreen) {
+                                try {
+                                    docEl.webkitRequestFullscreen();
+                                } catch (err) {
+                                    console.warn("Error attempting to enable webkit fullscreen:", err);
+                                }
+                            } else {
+                                console.warn("Fullscreen API not supported on this device/browser");
+                            }
                         }
                     }
 
@@ -1542,8 +1605,14 @@
                     // (pendingMenuJingle is set by set_menu_active(true) before the first click)
                     if (pendingMenuJingle) {
                         pendingMenuJingle = false;
-                        startupJingle.currentTime = 0;
-                        startupJingle.play().catch(() => {});
+                        if (startupJingle) {
+                            try {
+                                startupJingle.currentTime = 0;
+                                startupJingle.play().catch(() => {});
+                            } catch (err) {
+                                console.warn("Failed to play startup jingle:", err);
+                            }
+                        }
                     }
 
                     // Focus canvas
@@ -1563,9 +1632,14 @@
                     }
                 });
             }, 1000);
+        }
 
-
-        });
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            onPageReady();
+        } else {
+            document.addEventListener('DOMContentLoaded', onPageReady);
+            window.addEventListener('load', onPageReady);
+        }
 
         // ======================================================
         // PLAYLIST BACKGROUND MUSIC PLAYER
@@ -1585,15 +1659,23 @@
             if (!gameStarted) return;
             if (audioCtx) {
                 if (audioCtx.state === 'suspended') {
-                    audioCtx.resume().then(() => {
-                        if (currentAudio && currentAudio.paused) {
-                            currentAudio.play().catch(() => {});
-                        }
-                    });
+                    try {
+                        audioCtx.resume().then(() => {
+                            if (currentAudio && currentAudio.paused) {
+                                currentAudio.play().catch(() => {});
+                            }
+                        }).catch(e => console.warn("Error resuming audioCtx:", e));
+                    } catch (e) {
+                        console.warn("Failed to call resume on audioCtx:", e);
+                    }
                 }
                 return;
             }
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.error("Web Audio API not supported in this browser:", e);
+            }
             startMusic();
         }
 
@@ -1646,16 +1728,28 @@
                     if (menuActive) {
                         if (gameStarted) {
                             // Audio context exists — play immediately
-                            startupJingle.currentTime = 0;
-                            startupJingle.play().catch(() => {});
+                            if (startupJingle) {
+                                try {
+                                    startupJingle.currentTime = 0;
+                                    startupJingle.play().catch(() => {});
+                                } catch (err) {
+                                    console.warn("Failed to play startup jingle:", err);
+                                }
+                            }
                         } else {
                             // No user gesture yet — defer to startBtn click
                             pendingMenuJingle = true;
                         }
                     } else {
                         pendingMenuJingle = false;
-                        startupJingle.pause();
-                        startupJingle.currentTime = 0;
+                        if (startupJingle) {
+                            try {
+                                startupJingle.pause();
+                                startupJingle.currentTime = 0;
+                            } catch (err) {
+                                console.warn("Failed to pause startup jingle:", err);
+                            }
+                        }
                     }
                     checkOrientation();
                 };
@@ -2493,14 +2587,26 @@
         function playSpecificTrack(index) {
             // Ensure audio context is active
             if (audioCtx && audioCtx.state === 'suspended') {
-                audioCtx.resume();
+                try {
+                    audioCtx.resume().catch(e => console.warn("Failed to resume audioCtx:", e));
+                } catch (e) {
+                    console.warn("Failed to call resume on audioCtx:", e);
+                }
             } else if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.error("Web Audio API not supported in this browser:", e);
+                }
             }
 
             if (currentAudio) {
-                currentAudio.pause();
-                currentAudio.onended = null;
+                try {
+                    currentAudio.pause();
+                    currentAudio.onended = null;
+                } catch (e) {
+                    console.warn("Failed to pause currentAudio:", e);
+                }
             }
 
             currentTrackIndex = index;
@@ -2516,21 +2622,29 @@
                 }, 300);
             }
 
-            currentAudio = new Audio(trackUrl);
-            currentAudio.volume = 0.35;
-            currentAudio.play().catch(err => {
-                console.error("Audio playback error:", err);
-            });
+            try {
+                currentAudio = new Audio(trackUrl);
+                currentAudio.volume = 0.35;
+                currentAudio.play().catch(err => {
+                    console.error("Audio playback error:", err);
+                });
 
-            currentAudio.onended = () => {
-                playRandomTrack();
-            };
+                currentAudio.onended = () => {
+                    playRandomTrack();
+                };
+            } catch (err) {
+                console.error("Failed to initialize or play audio track:", err);
+            }
         }
 
         function stopMusic() {
             if (currentAudio) {
-                currentAudio.pause();
-                currentAudio.onended = null;
+                try {
+                    currentAudio.pause();
+                    currentAudio.onended = null;
+                } catch (e) {
+                    console.warn("Failed to pause currentAudio:", e);
+                }
             }
             const nowPlayingDiv = document.getElementById("now-playing");
             if (nowPlayingDiv) {
@@ -2544,8 +2658,12 @@
 
         function playRandomTrack() {
             if (currentAudio) {
-                currentAudio.pause();
-                currentAudio.onended = null;
+                try {
+                    currentAudio.pause();
+                    currentAudio.onended = null;
+                } catch (e) {
+                    console.warn("Failed to pause currentAudio:", e);
+                }
             }
 
             let nextIndex;
@@ -2571,16 +2689,20 @@
                 }, 300);
             }
 
-            currentAudio = new Audio(trackUrl);
-            currentAudio.volume = 0.35; // keep it at a comfortable background volume
+            try {
+                currentAudio = new Audio(trackUrl);
+                currentAudio.volume = 0.35; // keep it at a comfortable background volume
 
-            currentAudio.play().catch(err => {
-                console.error("Audio playback error:", err);
-            });
+                currentAudio.play().catch(err => {
+                    console.error("Audio playback error:", err);
+                });
 
-            currentAudio.onended = () => {
-                playRandomTrack();
-            };
+                currentAudio.onended = () => {
+                    playRandomTrack();
+                };
+            } catch (err) {
+                console.error("Failed to initialize or play random track:", err);
+            }
         }
 
         // Run Macroquad WebAssembly
