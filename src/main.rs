@@ -359,7 +359,7 @@ async fn main() {
                     } else {
                         // Transition to highscore entry (if qualified) or directly to leaderboard (if not)
                         is_game_over = state.time_left <= 0.0;
-                        is_bankrupt = state.player.credits <= -1000;
+                        is_bankrupt = false;
                         
                         let qualifies_for_leaderboard = {
                             let scores = state.load_leaderboard_rust();
@@ -610,7 +610,7 @@ async fn main() {
                 }
 
                 // Check loss conditions (trigger summary debrief instead of immediate game over)
-                let should_end = state.player.credits <= -1000 || (!state.is_in_menu && state.time_left <= 0.0);
+                let should_end = !state.is_in_menu && state.time_left <= 0.0;
                 if should_end {
                     state.is_showing_summary = true;
                     state.summary_timer = 0.0;
