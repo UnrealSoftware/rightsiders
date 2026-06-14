@@ -119,19 +119,41 @@ pub fn generate_assets() -> GameAssets {
     w0.draw_rect(0, (TEX_SIZE - 2) as i32, TEX_SIZE as i32, 2, c_neon_cyan);
     w0.draw_rect(0, 0, 2, TEX_SIZE as i32, c_neon_cyan);
     w0.draw_rect((TEX_SIZE - 2) as i32, 0, 2, TEX_SIZE as i32, c_neon_cyan);
-    // Draw windows
+    // Draw windows (some dark, some bright glowing cyan/yellow glass)
     for row in 0..3 {
         for col in 0..3 {
             let wx = 8 + col * 18;
             let wy = 8 + row * 18;
-            w0.draw_rect(wx, wy, 10, 10, 0x112244ff);
-            w0.draw_rect(wx + 2, wy + 2, 6, 6, c_neon_pink);
+            w0.draw_rect(wx, wy, 10, 10, 0x050c18ff); // Dark window frame
+            
+            // Stagger window illumination/types
+            let win_type = (row * 3 + col) % 4;
+            match win_type {
+                0 => {
+                    // Bright glowing yellow cyber glass window
+                    w0.draw_rect(wx + 1, wy + 1, 8, 8, 0xffd700ff);
+                    w0.draw_rect(wx + 3, wy + 3, 4, 4, c_white); // reflective glare
+                }
+                1 => {
+                    // Bright glowing cyan cyber glass window
+                    w0.draw_rect(wx + 1, wy + 1, 8, 8, 0x00f0ffff);
+                    w0.draw_rect(wx + 3, wy + 3, 4, 4, c_white); // reflective glare
+                }
+                2 => {
+                    // Neon pink panel
+                    w0.draw_rect(wx + 2, wy + 2, 6, 6, c_neon_pink);
+                }
+                _ => {
+                    // Unlit dark blue window
+                    w0.draw_rect(wx + 2, wy + 2, 6, 6, 0x141b2bff);
+                }
+            }
         }
     }
     walls.push(w0);
 
     // ==========================================
-    // WALL 1: Tech Panel Wall
+    // WALL 1: Tech Panel Wall with Air Conditioning module
     // ==========================================
     let mut w1 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_dark_gray);
     // Draw panel rivets and borders
@@ -140,11 +162,39 @@ pub fn generate_assets() -> GameAssets {
     w1.draw_rect(0, (TEX_SIZE - 1) as i32, TEX_SIZE as i32, 1, c_black);
     w1.draw_rect((TEX_SIZE - 1) as i32, 0, 1, TEX_SIZE as i32, c_black);
     // Draw circuit-like lines
-    w1.draw_line(10, 10, 10, 54, c_neon_green);
-    w1.draw_line(10, 32, 54, 32, c_neon_green);
-    w1.draw_line(54, 10, 54, 54, c_neon_green);
-    w1.draw_circle(32, 32, 4, c_neon_green);
-    w1.draw_circle(32, 32, 2, c_white);
+    w1.draw_line(10, 10, 10, 24, c_neon_green);
+    w1.draw_line(10, 20, 54, 20, c_neon_green);
+    w1.draw_line(54, 10, 54, 24, c_neon_green);
+    w1.draw_circle(32, 20, 3, c_neon_green);
+    w1.draw_circle(32, 20, 1, c_white);
+    
+    // Draw Air Conditioning (AC) module in the bottom half
+    let ac_x = 12;
+    let ac_y = 32;
+    let ac_w = 40;
+    let ac_h = 24;
+    // Box background (metallic)
+    w1.draw_rect(ac_x, ac_y, ac_w, ac_h, 0x3a3d45ff);
+    w1.draw_rect(ac_x + 1, ac_y + 1, ac_w - 2, ac_h - 2, 0x6e7380ff);
+    // Box shadow/borders
+    w1.draw_rect(ac_x, ac_y + ac_h - 1, ac_w, 1, 0x1a1c20ff);
+    w1.draw_rect(ac_x + ac_w - 1, ac_y, 1, ac_h, 0x1a1c20ff);
+    // Circular fan grill on the left (x: 16..32, y: 36..52)
+    w1.draw_circle(ac_x + 10, ac_y + 12, 8, 0x1a1c20ff);
+    // Fan center
+    w1.draw_circle(ac_x + 10, ac_y + 12, 2, 0x3a3d45ff);
+    // Fan blades (lines)
+    w1.draw_line(ac_x + 10, ac_y + 4, ac_x + 10, ac_y + 20, 0x4a4d55ff);
+    w1.draw_line(ac_x + 4, ac_y + 12, ac_x + 16, ac_y + 12, 0x4a4d55ff);
+    // Vents on the right (horizontal lines)
+    w1.draw_rect(ac_x + 22, ac_y + 5, 12, 2, 0x1a1c20ff);
+    w1.draw_rect(ac_x + 22, ac_y + 9, 12, 2, 0x1a1c20ff);
+    w1.draw_rect(ac_x + 22, ac_y + 13, 12, 2, 0x1a1c20ff);
+    w1.draw_rect(ac_x + 22, ac_y + 17, 12, 2, 0x1a1c20ff);
+    // Condenser piping (copper pipes at top/right)
+    w1.draw_line(ac_x + 36, ac_y + 6, ac_x + 36, ac_y + 18, 0xb87333ff); // Copper color
+    w1.draw_line(ac_x + 36, ac_y + 18, ac_x + 39, ac_y + 18, 0xb87333ff);
+    
     walls.push(w1);
 
     // ==========================================
@@ -534,6 +584,104 @@ pub fn generate_assets() -> GameAssets {
     s18.draw_circle(20, 50, 4, c_neon_pink);
     s18.draw_circle(44, 50, 4, c_neon_pink);
     sprites.push(s18);
+
+    // ==========================================
+    // SPRITE 19: Steam Cloud Small
+    // ==========================================
+    let mut s19 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    s19.draw_circle(32, 32, 6, 0xcccccc20); // translucent grey
+    s19.draw_circle(32, 32, 3, 0xffffff40); // brighter core
+    sprites.push(s19);
+
+    // ==========================================
+    // SPRITE 20: Steam Cloud Medium
+    // ==========================================
+    let mut s20 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    s20.draw_circle(32, 32, 10, 0xcccccc15);
+    s20.draw_circle(32, 32, 6, 0xffffff30);
+    sprites.push(s20);
+
+    // ==========================================
+    // SPRITE 21: Steam Cloud Large
+    // ==========================================
+    let mut s21 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    s21.draw_circle(32, 32, 14, 0xcccccc10);
+    s21.draw_circle(32, 32, 9, 0xffffff20);
+    sprites.push(s21);
+
+    // ==========================================
+    // SPRITE 22: Neon Sign - Vertical Cyan "CYBER"
+    // ==========================================
+    let mut s22 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Support bracket
+    s22.draw_rect(0, 4, 32, 2, c_dark_gray);
+    s22.draw_line(0, 4, 16, 16, c_gray);
+    // Glowing border (Cyan)
+    s22.draw_rect(14, 10, 12, 48, c_neon_cyan);
+    s22.draw_rect(15, 11, 10, 46, c_black);
+    // Letter C
+    s22.draw_rect(18, 14, 4, 2, c_neon_pink);
+    s22.draw_rect(18, 16, 2, 4, c_neon_pink);
+    s22.draw_rect(18, 20, 4, 2, c_neon_pink);
+    // Letter Y
+    s22.draw_line(18, 24, 20, 26, c_neon_pink);
+    s22.draw_line(22, 24, 20, 26, c_neon_pink);
+    s22.draw_rect(20, 26, 2, 4, c_neon_pink);
+    // Letter B
+    s22.draw_rect(18, 32, 4, 6, c_neon_pink);
+    s22.draw_rect(20, 33, 2, 1, c_black);
+    s22.draw_rect(20, 36, 2, 1, c_black);
+    // Letter E
+    s22.draw_rect(18, 40, 4, 6, c_neon_pink);
+    s22.draw_rect(20, 41, 2, 1, c_black);
+    s22.draw_rect(20, 43, 2, 1, c_black);
+    // Letter R
+    s22.draw_rect(18, 48, 4, 6, c_neon_pink);
+    s22.draw_rect(20, 49, 2, 1, c_black);
+    s22.draw_line(20, 51, 22, 53, c_neon_pink);
+    sprites.push(s22);
+
+    // ==========================================
+    // SPRITE 23: Neon Sign - Vertical Pink "BAR"
+    // ==========================================
+    let mut s23 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Support bracket
+    s23.draw_rect(0, 4, 32, 2, c_dark_gray);
+    s23.draw_line(0, 4, 16, 16, c_gray);
+    // Glowing border (Pink)
+    s23.draw_rect(14, 10, 12, 48, c_neon_pink);
+    s23.draw_rect(15, 11, 10, 46, c_black);
+    // Letter B
+    s23.draw_rect(18, 16, 4, 6, c_neon_cyan);
+    s23.draw_rect(20, 17, 2, 1, c_black);
+    s23.draw_rect(20, 20, 2, 1, c_black);
+    // Letter A
+    s23.draw_rect(18, 26, 4, 6, c_neon_cyan);
+    s23.draw_rect(20, 27, 2, 1, c_black);
+    s23.draw_rect(20, 30, 2, 2, c_black);
+    // Letter R
+    s23.draw_rect(18, 36, 4, 6, c_neon_cyan);
+    s23.draw_rect(20, 37, 2, 1, c_black);
+    s23.draw_line(20, 39, 22, 41, c_neon_cyan);
+    sprites.push(s23);
+
+    // ==========================================
+    // SPRITE 24: Neon Sign - Green Cyber-Glyphs
+    // ==========================================
+    let mut s24 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
+    // Support bracket
+    s24.draw_rect(0, 4, 32, 2, c_dark_gray);
+    s24.draw_line(0, 4, 16, 16, c_gray);
+    // Glowing border (Green)
+    s24.draw_rect(14, 10, 12, 48, c_neon_green);
+    s24.draw_rect(15, 11, 10, 46, c_black);
+    // Glyphs (Yellow)
+    s24.draw_circle(20, 18, 2, c_neon_yellow);
+    s24.draw_rect(18, 26, 4, 2, c_neon_yellow);
+    s24.draw_line(18, 32, 22, 36, c_neon_yellow);
+    s24.draw_line(22, 32, 18, 36, c_neon_yellow);
+    s24.draw_rect(20, 42, 2, 6, c_neon_yellow);
+    sprites.push(s24);
 
     // ==========================================
     // WEAPON 0: Robo-Blaster Idle

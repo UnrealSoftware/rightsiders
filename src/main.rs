@@ -1066,6 +1066,61 @@ async fn main() {
             });
         }
 
+        // Push procedural neon signs sticking out from walls in a radius around the player
+        let p_tx = state.player.x.floor() as i32;
+        let p_ty = state.player.y.floor() as i32;
+        let radius = 10;
+        for dx in -radius..=radius {
+            for dy in -radius..=radius {
+                let gx = (p_tx + dx).rem_euclid(MAP_WIDTH as i32) as usize;
+                let gy = (p_ty + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+
+                // Must be a wall
+                if let TileType::Wall(_) = state.map.grid[gx][gy] {
+                    // Check if this wall gets a neon sign procedurally (e.g. 1 in 6 walls)
+                    if (gx * 17 + gy * 31) % 6 == 0 {
+                        // Find a neighbor tile that is a sidewalk or road
+                        let west_x = (gx as i32 - 1).rem_euclid(MAP_WIDTH as i32) as usize;
+                        let east_x = (gx as i32 + 1).rem_euclid(MAP_WIDTH as i32) as usize;
+                        let north_y = (gy as i32 - 1).rem_euclid(MAP_HEIGHT as i32) as usize;
+                        let south_y = (gy as i32 + 1).rem_euclid(MAP_HEIGHT as i32) as usize;
+
+                        let is_walkable = |t: TileType| {
+                            t == TileType::SidewalkVert || t == TileType::SidewalkHoriz || t == TileType::Intersection
+                        };
+
+                        // Pick a side to stick out from
+                        let mut side = None;
+                        if is_walkable(state.map.grid[west_x][gy]) {
+                            side = Some((-0.35, 0.5));
+                        } else if is_walkable(state.map.grid[east_x][gy]) {
+                            side = Some((1.35, 0.5));
+                        } else if is_walkable(state.map.grid[gx][north_y]) {
+                            side = Some((0.5, -0.35));
+                        } else if is_walkable(state.map.grid[gx][south_y]) {
+                            side = Some((0.5, 1.35));
+                        }
+
+                        if let Some((ox, oy)) = side {
+                            // Compute neon sign sprite index (22, 23, 24)
+                            let tex_idx = 22 + ((gx * 7 + gy * 13) % 3);
+                            let world_x = gx as f32 + ox;
+                            let world_y = gy as f32 + oy;
+
+                            sprites_to_draw.push(SpriteToRender {
+                                x: world_x,
+                                y: world_y,
+                                z: 0.6, // Higher up on the wall
+                                texture_idx: tex_idx,
+                                is_targeted: false,
+                                target_color: 0,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         // Push particles to sprite list
         for p in &state.particles {
             let tex_idx = match p.p_type {
@@ -1078,6 +1133,15 @@ async fn main() {
                         15 // Orange/pink spark
                     } else {
                         16 // Dark grey smoke
+                    }
+                }
+                crate::game::ParticleType::Steam => {
+                    if p.lifetime > 1.2 {
+                        19 // Small steam
+                    } else if p.lifetime > 0.6 {
+                        20 // Medium steam
+                    } else {
+                        21 // Large steam
                     }
                 }
             };

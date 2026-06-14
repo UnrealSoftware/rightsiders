@@ -173,6 +173,7 @@ pub enum ParticleType {
     BloodSprinkle,
     GoreDebris,
     Smoke,
+    Steam,
 }
 
 #[derive(Clone)]
@@ -829,14 +830,14 @@ impl GameState {
     /// Spawn 3D blood droplets and meat debris
     pub fn spawn_blood_explosion(&mut self, x: f32, y: f32) {
         // Spawn blood sprinkles (droplets)
-        let num_sprinkles = 15;
+        let num_sprinkles = 45;
         for _ in 0..num_sprinkles {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.8 + rng_float(&mut self.rng_state) * 1.6; // 2x wider horizontal spread
+            let speed_h = 1.2 + rng_float(&mut self.rng_state) * 3.8; // High speed scatter
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
-            let vz = 0.8 + rng_float(&mut self.rng_state) * 1.5;     // Lower vertical bounce
-            let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Spawn closer to chest level
+            let vz = 1.5 + rng_float(&mut self.rng_state) * 3.5;     // Higher vertical splash
+            let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
             self.particles.push(Particle {
                 x,
@@ -846,21 +847,21 @@ impl GameState {
                 vy,
                 vz,
                 p_type: ParticleType::BloodSprinkle,
-                bounces: 1,
-                lifetime: 0.6 + rng_float(&mut self.rng_state) * 0.6,
+                bounces: 1 + (next_rng(&mut self.rng_state) % 3), // Bounces 1-3 times
+                lifetime: 1.0 + rng_float(&mut self.rng_state) * 1.5,
                 first_impact: true,
             });
         }
 
         // Spawn gore chunks (red meaty chunks)
-        let num_chunks = 6;
+        let num_chunks = 20;
         for _ in 0..num_chunks {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.4 + rng_float(&mut self.rng_state) * 1.2; // 2x wider horizontal spread
+            let speed_h = 0.8 + rng_float(&mut self.rng_state) * 2.8; // Far flung chunks
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
-            let vz = 1.0 + rng_float(&mut self.rng_state) * 1.8;     // Lower vertical bounce
-            let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Spawn closer to chest level
+            let vz = 2.5 + rng_float(&mut self.rng_state) * 4.5;     // Volcanic ejection upward
+            let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
             self.particles.push(Particle {
                 x,
@@ -870,8 +871,8 @@ impl GameState {
                 vy,
                 vz,
                 p_type: ParticleType::GoreDebris,
-                bounces: 3 + (next_rng(&mut self.rng_state) % 3), // Bounces 3-5 times
-                lifetime: 1.5 + rng_float(&mut self.rng_state) * 1.5,
+                bounces: 4 + (next_rng(&mut self.rng_state) % 4), // Bounces 4-7 times
+                lifetime: 2.0 + rng_float(&mut self.rng_state) * 2.5,
                 first_impact: true,
             });
         }
@@ -1091,6 +1092,76 @@ impl GameState {
             txt.duration > 0.0
         });
 
+        // Spawn steam particles procedurally at sidewalk/road drains
+        let p_tx = self.player.x.floor() as i32;
+        let p_ty = self.player.y.floor() as i32;
+        let scan_radius = 6;
+        for dx in -scan_radius..=scan_radius {
+            for dy in -scan_radius..=scan_radius {
+                let gx = (p_tx + dx).rem_euclid(MAP_WIDTH as i32) as usize;
+                let gy = (p_ty + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+                
+                // A tile is a drain if it's not a wall, and passes the coordinate hash check
+                let is_wall = match self.map.grid[gx][gy] {
+                    crate::map::TileType::Wall(_) => true,
+                    _ => false,
+                };
+                if !is_wall && (gx * 23 + gy * 37) % 11 == 0 {
+                    // Check if it's on the player's sidewalk
+                    let player_tile = self.map.grid[self.player.tx][self.player.ty];
+                    let is_player_sidewalk = match player_tile {
+                        crate::map::TileType::SidewalkVert => gx == self.player.tx,
+                        crate::map::TileType::SidewalkHoriz => gy == self.player.ty,
+                        _ => false,
+                    };
+
+                    // Check if it's closely in front of the player (within 4.0 tiles distance)
+                    let map_w = MAP_WIDTH as f32;
+                    let map_h = MAP_HEIGHT as f32;
+                    let mut rel_dx = (gx as f32 + 0.5) - self.player.x;
+                    if rel_dx > map_w / 2.0 { rel_dx -= map_w; }
+                    else if rel_dx < -map_w / 2.0 { rel_dx += map_w; }
+
+                    let mut rel_dy = (gy as f32 + 0.5) - self.player.y;
+                    if rel_dy > map_h / 2.0 { rel_dy -= map_h; }
+                    else if rel_dy < -map_h / 2.0 { rel_dy += map_h; }
+
+                    let dot = rel_dx * self.player.dir_x + rel_dy * self.player.dir_y;
+                    let dist_sq = rel_dx * rel_dx + rel_dy * rel_dy;
+                    let is_close_in_front = dot > 0.0 && dist_sq <= 16.0;
+
+                    let mut spawn_chance = 25; // 2.5% base chance per frame
+                    if is_player_sidewalk && is_close_in_front {
+                        spawn_chance = 180; // Boosted to 18% chance per frame
+                    }
+
+                    if (next_rng(&mut self.rng_state) % 1000) < spawn_chance {
+                        let offset_x = (rng_float(&mut self.rng_state) - 0.5) * 0.15;
+                        let offset_y = (rng_float(&mut self.rng_state) - 0.5) * 0.15;
+                        let sx = gx as f32 + 0.5 + offset_x;
+                        let sy = gy as f32 + 0.5 + offset_y;
+                        
+                        let vx = (rng_float(&mut self.rng_state) - 0.5) * 0.06;
+                        let vy = (rng_float(&mut self.rng_state) - 0.5) * 0.06;
+                        let vz = 0.05 + rng_float(&mut self.rng_state) * 0.05;
+                        
+                        self.particles.push(Particle {
+                            x: sx,
+                            y: sy,
+                            z: 0.0,
+                            vx,
+                            vy,
+                            vz,
+                            p_type: ParticleType::Steam,
+                            bounces: 0,
+                            lifetime: 1.5 + rng_float(&mut self.rng_state) * 1.0,
+                            first_impact: false,
+                        });
+                    }
+                }
+            }
+        }
+
         // Update particles
         let gravity = 8.5;
         let map_w = MAP_WIDTH as f32;
@@ -1104,13 +1175,33 @@ impl GameState {
                 return false;
             }
 
-            if p.p_type == ParticleType::Smoke {
+            // Immediately destroy particles behind the player to optimize performance
+            let mut dx = p.x - self.player.x;
+            if dx > map_w / 2.0 { dx -= map_w; }
+            else if dx < -map_w / 2.0 { dx += map_w; }
+
+            let mut dy = p.y - self.player.y;
+            if dy > map_h / 2.0 { dy -= map_h; }
+            else if dy < -map_h / 2.0 { dy += map_h; }
+
+            let dot = dx * self.player.dir_x + dy * self.player.dir_y;
+            if dot < 0.0 {
+                return false;
+            }
+
+            if p.p_type == ParticleType::Smoke || p.p_type == ParticleType::Steam {
                 p.x = (p.x + p.vx * dt).rem_euclid(map_w);
                 p.y = (p.y + p.vy * dt).rem_euclid(map_h);
                 p.z += p.vz * dt;
-                p.vx *= 0.95;
-                p.vy *= 0.95;
-                p.vz *= 0.95;
+                if p.p_type == ParticleType::Steam {
+                    p.vx *= 0.98;
+                    p.vy *= 0.98;
+                    p.vz = (p.vz + 0.15 * dt).min(0.25); // Float upward slowly
+                } else {
+                    p.vx *= 0.95;
+                    p.vy *= 0.95;
+                    p.vz *= 0.95;
+                }
                 return true;
             }
 

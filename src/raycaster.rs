@@ -213,6 +213,27 @@ impl Raycaster {
                         }
                     };
 
+                    // Procedural metallic drain grate
+                    let is_drain_tile = match tile {
+                        TileType::Wall(_) => false,
+                        _ => (tx * 23 + ty * 37) % 11 == 0,
+                    };
+                    if is_drain_tile {
+                        let cx = tx as f32 + 0.5;
+                        let cy = ty as f32 + 0.5;
+                        let dx = floor_x - cx;
+                        let dy = floor_y - cy;
+                        if dx.abs() <= 0.13 && dy.abs() <= 0.13 {
+                            let is_rim = dx.abs() > 0.11 || dy.abs() > 0.11;
+                            let is_grill = (dx * 25.0).fract().abs() < 0.3;
+                            if is_rim || is_grill {
+                                color = 0x4f525cff; // Metallic steel color
+                            } else {
+                                color = 0x050508ff; // Dark slit under grate
+                            }
+                        }
+                    }
+
                     // Check if it's a puddle on the road or intersection
                     let mut is_puddle = false;
                     if tile == TileType::Road || tile == TileType::Intersection {
@@ -257,7 +278,7 @@ impl Raycaster {
                     } else if is_puddle {
                         60
                     } else {
-                        15
+                        20
                     };
 
                     // Reconstruct draw_end for this column (using precomputed draw_ends)
@@ -538,6 +559,10 @@ impl Raycaster {
                 12 => 0.25, // Meat chunk
                 13 => 0.22, // Guided missile glowing sphere
                 14 | 15 | 16 => 0.35, // Smoke trail particles
+                19 => 0.25, // Steam small
+                20 => 0.45, // Steam medium
+                21 => 0.65, // Steam large
+                22 | 23 | 24 => 0.70, // Neon signs
                 _ => 0.60,  // Citizens
             };
             let sprite_height = (full_height as f32 * scale) as i32;
@@ -609,6 +634,25 @@ impl Raycaster {
                         let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
                         let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
                         let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;
+                        pixel = (r << 24) | (g << 16) | (b << 8) | (pixel & 0xff); // Keep alpha
+                    }
+
+                    // CPU-side alpha blending if pixel is translucent (alpha < 255)
+                    let alpha = pixel & 0xff;
+                    if alpha < 255 {
+                        let dest_idx = (y as usize) * WIDTH + (stripe as usize);
+                        let dest_pixel = self.pixels[dest_idx];
+                        let dest_r = (dest_pixel >> 24) & 0xff;
+                        let dest_g = (dest_pixel >> 16) & 0xff;
+                        let dest_b = (dest_pixel >> 8) & 0xff;
+
+                        let src_r = (pixel >> 24) & 0xff;
+                        let src_g = (pixel >> 16) & 0xff;
+                        let src_b = (pixel >> 8) & 0xff;
+
+                        let r = (src_r * alpha + dest_r * (255 - alpha)) / 255;
+                        let g = (src_g * alpha + dest_g * (255 - alpha)) / 255;
+                        let b = (src_b * alpha + dest_b * (255 - alpha)) / 255;
                         pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
                     }
 
