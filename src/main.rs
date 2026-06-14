@@ -384,6 +384,7 @@ async fn main() {
                             state.new_rank = None;
                             state.is_entering_highscore = false;
                             state.show_leaderboard = true;
+                            state.leaderboard_open_time = get_time();
                             game::set_entering_highscore(false);
                             state.is_showing_summary = false;
                             game::play_sound("laser");
@@ -497,6 +498,7 @@ async fn main() {
                                     state.leaderboard_data = state.load_leaderboard_rust();
                                     state.is_entering_highscore = false;
                                     state.show_leaderboard = true;
+                                    state.leaderboard_open_time = get_time();
                                     state.is_in_menu = false; // deactivate menu to show leaderboard overlay
                                     state.menu_timer = 0.0; // reset menu timer to 0 on exit
                                     state.menu_shockwaves.clear();
@@ -797,6 +799,7 @@ async fn main() {
                             state.new_rank = None;
                             state.is_entering_highscore = false;
                             state.show_leaderboard = true;
+                            state.leaderboard_open_time = get_time();
                             game::set_entering_highscore(false);
                             game::play_sound("rank_fail");
                         }
@@ -840,6 +843,7 @@ async fn main() {
                             }
                             state.is_entering_highscore = false;
                             state.show_leaderboard = true;
+                            state.leaderboard_open_time = get_time();
                             game::set_entering_highscore(false);
                             if state.new_rank.is_some() {
                                 game::play_sound("rank_top10");
@@ -2586,6 +2590,30 @@ async fn main() {
                     let table_w = 360.0 * ui_scale;
                     let row_h = 14.5 * ui_scale;
                     
+                    let elapsed = (get_time() - state.leaderboard_open_time) as f32;
+
+                    // Table headers animation (starts at t=0, duration=0.25)
+                    let header_normal = Color::from_rgba(0, 240, 255, 255);
+                    let header_col = if elapsed < 0.25 {
+                        let t_factor = elapsed / 0.25;
+                        let r = 1.0 + (header_normal.r - 1.0) * t_factor;
+                        let g = 1.0 + (header_normal.g - 1.0) * t_factor;
+                        let b = 1.0 + (header_normal.b - 1.0) * t_factor;
+                        let a = 1.0 + (header_normal.a - 1.0) * t_factor;
+                        Color::new(r, g, b, a)
+                    } else {
+                        header_normal
+                    };
+
+                    let underline_normal = Color::from_rgba(0, 240, 255, 120);
+                    let underline_col = if elapsed < 0.25 {
+                        let t_factor = elapsed / 0.25;
+                        let a = 0.8 + (underline_normal.a - 0.8) * t_factor;
+                        Color::new(1.0, 1.0, 1.0, a)
+                    } else {
+                        underline_normal
+                    };
+
                     // Draw table headers
                     let th_rank = "RANK";
                     let th_agent = "UNIT";
@@ -2594,16 +2622,48 @@ async fn main() {
                     let dim_th_agent = measure_text(th_agent, Some(&font), size_headers as u16, 1.0);
                     let dim_th_score = measure_text(th_score, Some(&font), size_headers as u16, 1.0);
                     
-                    let header_col = Color::from_rgba(0, 240, 255, 255);
-                    draw_pixel_text(th_rank, table_x + 10.0 * ui_scale, table_y + row_h - 4.0 * ui_scale, size_headers, header_col, &font);
-                    draw_pixel_text(th_agent, cx - dim_th_agent.width / 2.0, table_y + row_h - 4.0 * ui_scale, size_headers, header_col, &font);
-                    draw_pixel_text(th_score, table_x + table_w - dim_th_score.width - 10.0 * ui_scale, table_y + row_h - 4.0 * ui_scale, size_headers, header_col, &font);
+                    draw_pixel_text(th_rank, table_x + 10.0 * ui_scale, table_y + row_h - 3.25 * ui_scale, size_headers, header_col, &font);
+                    draw_pixel_text(th_agent, cx - dim_th_agent.width / 2.0, table_y + row_h - 3.25 * ui_scale, size_headers, header_col, &font);
+                    draw_pixel_text(th_score, table_x + table_w - dim_th_score.width - 10.0 * ui_scale, table_y + row_h - 3.25 * ui_scale, size_headers, header_col, &font);
                     
                     // Draw header underline
-                    draw_rectangle(table_x, table_y + row_h, table_w, 2.0 * ui_scale, Color::from_rgba(0, 240, 255, 120));
+                    draw_rectangle(table_x, table_y + row_h, table_w, 2.0 * ui_scale, underline_col);
                     
                     // Draw rows
                     for idx in 0..10 {
+                        let line_delay = idx as f32 * 0.025; // Staggered entrance
+                        let flash_duration = 0.25; // 0.25s animation per line
+                        
+                        let is_flashing = if elapsed < 0.5 {
+                            if elapsed < line_delay {
+                                continue; // Keep hidden until scheduled delay during initial build up
+                            }
+                            elapsed < line_delay + flash_duration
+                        } else {
+                            // Repeating cycles of 3.5s (3.0s delay + 0.5s wave) after initial build up
+                            let cycle_elapsed = elapsed - 0.5;
+                            let time_in_cycle = cycle_elapsed % 3.5;
+                            if time_in_cycle >= 3.0 {
+                                let time_in_wave = time_in_cycle - 3.0;
+                                time_in_wave >= line_delay && time_in_wave < line_delay + flash_duration
+                            } else {
+                                false
+                            }
+                        };
+
+                        let t_factor = if is_flashing {
+                            if elapsed < 0.5 {
+                                (elapsed - line_delay) / flash_duration
+                            } else {
+                                let cycle_elapsed = elapsed - 0.5;
+                                let time_in_cycle = cycle_elapsed % 3.5;
+                                let time_in_wave = time_in_cycle - 3.0;
+                                (time_in_wave - line_delay) / flash_duration
+                            }
+                        } else {
+                            1.0 // Normal color
+                        };
+
                         let ry = table_y + row_h * 1.2 + idx as f32 * row_h;
                         
                         let is_new = state.new_rank == Some(idx);
@@ -2613,10 +2673,30 @@ async fn main() {
                         } else {
                             Color::from_rgba(180, 200, 220, 255) // Slate blue
                         };
+
+                        // Line color: bright white flash fading to row_color
+                        let display_color = if t_factor < 1.0 {
+                            let r = 1.0 + (row_color.r - 1.0) * t_factor;
+                            let g = 1.0 + (row_color.g - 1.0) * t_factor;
+                            let b = 1.0 + (row_color.b - 1.0) * t_factor;
+                            let a = 1.0 + (row_color.a - 1.0) * t_factor;
+                            Color::new(r, g, b, a)
+                        } else {
+                            row_color
+                        };
+
+                        // Separator line color: bright white flash fading to Color::from_rgba(255, 255, 255, 12)
+                        let sep_normal = Color::from_rgba(255, 255, 255, 12);
+                        let sep_color = if t_factor < 1.0 {
+                            let a = 0.70 + (sep_normal.a - 0.70) * t_factor;
+                            Color::new(1.0, 1.0, 1.0, a)
+                        } else {
+                            sep_normal
+                        };
                         
                         // Rank column
                         let rank_str = format!("#{}", idx + 1);
-                        draw_pixel_text(&rank_str, table_x + 10.0 * ui_scale, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                        draw_pixel_text(&rank_str, table_x + 10.0 * ui_scale, ry + row_h - 3.25 * ui_scale, size_row, display_color, &font);
                         
                         // Get name & score
                         if idx < state.leaderboard_data.len() {
@@ -2624,25 +2704,25 @@ async fn main() {
                             
                             // Name column
                             let dim_name = measure_text(name, Some(&font), size_row as u16, 1.0);
-                            draw_pixel_text(name, cx - dim_name.width / 2.0, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                            draw_pixel_text(name, cx - dim_name.width / 2.0, ry + row_h - 3.25 * ui_scale, size_row, display_color, &font);
                             
                             // Score column
                             let score_str = format!("{} CR", score);
                             let dim_score = measure_text(&score_str, Some(&font), size_row as u16, 1.0);
-                            draw_pixel_text(&score_str, table_x + table_w - dim_score.width - 10.0 * ui_scale, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                            draw_pixel_text(&score_str, table_x + table_w - dim_score.width - 10.0 * ui_scale, ry + row_h - 3.25 * ui_scale, size_row, display_color, &font);
                         } else {
                             // Empty row filler
                             let name = "---";
                             let dim_name = measure_text(name, Some(&font), size_row as u16, 1.0);
-                            draw_pixel_text(name, cx - dim_name.width / 2.0, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                            draw_pixel_text(name, cx - dim_name.width / 2.0, ry + row_h - 3.25 * ui_scale, size_row, display_color, &font);
                             
                             let score_str = "--- CR";
                             let dim_score = measure_text(score_str, Some(&font), size_row as u16, 1.0);
-                            draw_pixel_text(score_str, table_x + table_w - dim_score.width - 10.0 * ui_scale, ry + row_h - 4.0 * ui_scale, size_row, row_color, &font);
+                            draw_pixel_text(score_str, table_x + table_w - dim_score.width - 10.0 * ui_scale, ry + row_h - 3.25 * ui_scale, size_row, display_color, &font);
                         }
                         
-                        // Thin separator line
-                        draw_rectangle(table_x, ry + row_h, table_w, 1.0 * ui_scale, Color::from_rgba(255, 255, 255, 12));
+                        // Thin separator line (vertically centered now)
+                        draw_rectangle(table_x, ry + row_h, table_w, 1.0 * ui_scale, sep_color);
                     }
                     
                     // Message below table
@@ -2667,21 +2747,54 @@ async fn main() {
                         ("UNIT LEADERBOARD RECORDINGS".to_string(), Color::from_rgba(0, 240, 255, 255))
                     };
                     
-                    let dim_msg = measure_text(&t_msg, Some(&font), size_msg as u16, 1.0);
+                    // Message animation (starts at t=0.25, duration=0.25)
+                    let msg_delay = 0.25;
+                    let msg_flash_dur = 0.25;
                     let msg_y = table_y + row_h * 11.5 + 15.0 * ui_scale;
-                    draw_pixel_text(&t_msg, view_x + (view_w - dim_msg.width) / 2.0, msg_y, size_msg, msg_col, &font);
+
+                    if elapsed >= msg_delay {
+                        let final_msg_col = if elapsed < msg_delay + msg_flash_dur {
+                            let t_factor = (elapsed - msg_delay) / msg_flash_dur;
+                            let r = 1.0 + (msg_col.r - 1.0) * t_factor;
+                            let g = 1.0 + (msg_col.g - 1.0) * t_factor;
+                            let b = 1.0 + (msg_col.b - 1.0) * t_factor;
+                            let a = 1.0 + (msg_col.a - 1.0) * t_factor;
+                            Color::new(r, g, b, a)
+                        } else {
+                            msg_col
+                        };
+                        let dim_msg = measure_text(&t_msg, Some(&font), size_msg as u16, 1.0);
+                        draw_pixel_text(&t_msg, view_x + (view_w - dim_msg.width) / 2.0, msg_y, size_msg, final_msg_col, &font);
+                    }
                     
-                    // Reboot prompt
-                    let t_reboot = if game::is_mobile() {
-                        "TAP TO CONTINUE"
-                    } else {
-                        "PRESS 'R' TO CONTINUE"
-                    };
-                    let dim_reboot = measure_text(t_reboot, Some(&font), size_reboot as u16, 1.0);
-                    let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking
-                    let reboot_col = Color::from_rgba(0, 240, 255, (255.0 * pulse) as u8);
-                    let reboot_y = msg_y + 18.0 * ui_scale;
-                    draw_pixel_text(t_reboot, view_x + (view_w - dim_reboot.width) / 2.0, reboot_y, size_reboot, reboot_col, &font);
+                    // Reboot prompt animation (starts at t=0.35, duration=0.15)
+                    let reboot_delay = 0.35;
+                    let reboot_flash_dur = 0.15;
+
+                    if elapsed >= reboot_delay {
+                        let t_reboot = if game::is_mobile() {
+                            "TAP TO CONTINUE"
+                        } else {
+                            "PRESS 'R' TO CONTINUE"
+                        };
+                        let dim_reboot = measure_text(t_reboot, Some(&font), size_reboot as u16, 1.0);
+                        let pulse = (get_time() * 9.0).sin() * 0.25 + 0.75; // 3x faster blinking
+                        let target_col = Color::from_rgba(0, 240, 255, (255.0 * pulse) as u8);
+                        
+                        let final_reboot_col = if elapsed < reboot_delay + reboot_flash_dur {
+                            let t_factor = (elapsed - reboot_delay) / reboot_flash_dur;
+                            let r = 1.0 + (target_col.r - 1.0) * t_factor;
+                            let g = 1.0 + (target_col.g - 1.0) * t_factor;
+                            let b = 1.0 + (target_col.b - 1.0) * t_factor;
+                            let a = 1.0 + (target_col.a - 1.0) * t_factor;
+                            Color::new(r, g, b, a)
+                        } else {
+                            target_col
+                        };
+                        
+                        let reboot_y = msg_y + 18.0 * ui_scale;
+                        draw_pixel_text(t_reboot, view_x + (view_w - dim_reboot.width) / 2.0, reboot_y, size_reboot, final_reboot_col, &font);
+                    }
 
                     // Draw firework particles and shockwaves on top of the leaderboard
                     for p in &state.menu_particles {
