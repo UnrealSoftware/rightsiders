@@ -1126,12 +1126,10 @@ async fn main() {
         );
 
         // 5. Copy CPU pixels into GPU texture buffer
-        for i in 0..(WIDTH * HEIGHT) {
-            let pixel = raycaster.pixels[i];
-            screen_image.bytes[i * 4]     = ((pixel >> 24) & 0xff) as u8;
-            screen_image.bytes[i * 4 + 1] = ((pixel >> 16) & 0xff) as u8;
-            screen_image.bytes[i * 4 + 2] = ((pixel >> 8) & 0xff) as u8;
-            screen_image.bytes[i * 4 + 3] = (pixel & 0xff) as u8;
+        let pixels = &raycaster.pixels[0..WIDTH * HEIGHT];
+        let bytes = &mut screen_image.bytes[0..WIDTH * HEIGHT * 4];
+        for (i, rgba) in bytes.chunks_exact_mut(4).enumerate() {
+            rgba.copy_from_slice(&pixels[i].to_be_bytes());
         }
         screen_texture.update(&screen_image);
 

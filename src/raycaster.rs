@@ -79,6 +79,7 @@ impl Raycaster {
     }
 
     pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal]) {
+        let time = get_time() as f32;
         // Precompute draw_end for each screen column to speed up reflection math
         let mut draw_ends = [0; WIDTH];
         for x in 0..WIDTH {
@@ -264,7 +265,6 @@ impl Raycaster {
                     let y_reflected = 2 * draw_end - y as i32;
 
                     // Ripple waves based on cos/sin over time (subtler ripple for lower reflectiveness)
-                    let time = get_time() as f32;
                     let ripple_mult = if reflect_pct == 60 { 0.015 } else if reflect_pct == 50 { 0.012 } else { 0.005 };
                     let ripple = ripple_mult * ((floor_x * 12.0 + time * 6.0).sin() + (floor_y * 12.0 - time * 5.0).cos());
                     let ref_x = (x as f32 + ripple * 45.0) as i32;
@@ -480,6 +480,7 @@ impl Raycaster {
 
     /// Renders sorted sprites with wall occlusion checking
     pub fn cast_sprites(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, sprites: &[SpriteToRender], assets: &GameAssets) {
+        let time = get_time();
         // Sort sprites by distance descending (using torus wrapped distance)
         let mut sorted_indices: Vec<usize> = (0..sprites.len()).collect();
         sorted_indices.sort_by(|&a, &b| {
@@ -584,7 +585,7 @@ impl Raycaster {
 
                     // Apply scanner glow/tint effect if targeted
                     if sprite.is_targeted {
-                        let scan_pos = (((get_time() * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
+                        let scan_pos = (((time * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
                         let dy = y - draw_start_y_unclamped;
                         if (dy - scan_pos).abs() < 2 {
                             pixel = sprite.target_color;
