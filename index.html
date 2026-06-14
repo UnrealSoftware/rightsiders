@@ -644,6 +644,35 @@
             display: block;
             opacity: 1;
         }
+        .privacy-loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            font-family: 'Share Tech Mono', monospace;
+            color: var(--neon-cyan);
+            font-size: 14px;
+            text-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+            pointer-events: none;
+            z-index: 10002;
+        }
+        .privacy-loader-spinner {
+            width: 32px;
+            height: 32px;
+            border: 2px solid rgba(0, 240, 255, 0.1);
+            border-top: 2px solid var(--neon-cyan);
+            border-radius: 50%;
+            animation: privacy-spin 1s linear infinite;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+        }
+        @keyframes privacy-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
         .privacy-modal {
             display: none;
             position: fixed;
@@ -664,6 +693,7 @@
             color: #fff;
             opacity: 0;
             pointer-events: none;
+            overflow: hidden;
             transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .privacy-modal.open {
@@ -801,6 +831,15 @@
         }
         .privacy-modal-content a:hover {
             text-decoration: underline;
+        }
+        .privacy-modal-content .email-obfuscated {
+            color: var(--neon-cyan);
+            text-decoration: none;
+            cursor: pointer;
+            border-bottom: 1px dashed var(--neon-cyan);
+        }
+        .privacy-modal-content .email-obfuscated::after {
+            content: " [at] peterschauss.de";
         }
 
         /* Media query to hide header, footer on mobile */
@@ -1125,13 +1164,16 @@
     </div>
 
     <!-- Privacy Modal -->
-    <div id="privacy-modal-overlay" class="privacy-modal-overlay"></div>
+    <div id="privacy-modal-overlay" class="privacy-modal-overlay">
+        <div id="privacy-loader" class="privacy-loader">
+            <div class="privacy-loader-spinner"></div>
+            <span>LOADING PRIVACY PROTOCOL...</span>
+        </div>
+    </div>
     <div id="privacy-modal" class="privacy-modal">
         <button id="close-privacy-modal" class="close-privacy-modal">&times;</button>
         <h3>PRIVACY DIRECTIVE</h3>
-        <div id="privacy-modal-content" class="privacy-modal-content">
-            <div style="text-align: center; color: var(--neon-cyan); margin: 20px 0;">LOADING PRIVACY PROTOCOL...</div>
-        </div>
+        <div id="privacy-modal-content" class="privacy-modal-content"></div>
     </div>
 
     <!-- Fullscreen Helper Modal (iOS) -->
@@ -2675,19 +2717,30 @@
             const overlay = document.getElementById("privacy-modal-overlay");
             const modal = document.getElementById("privacy-modal");
             const contentDiv = document.getElementById("privacy-modal-content");
+            const loader = document.getElementById("privacy-loader");
 
             if (!overlay || !modal || !contentDiv) return;
 
+            // Start by displaying and opening the overlay
             overlay.style.display = "block";
-            modal.style.display = "block";
-
-            // Force reflow
-            void modal.offsetHeight;
-
+            void overlay.offsetHeight; // force reflow for opacity transition
             overlay.classList.add("open");
-            modal.classList.add("open");
+
+            // Helper function to animate/display the modal content
+            function showModalWithContent(contentHtml) {
+                // If overlay was closed during the loading phase, do not open the modal
+                if (!overlay.classList.contains("open")) return;
+
+                if (loader) loader.style.display = "none";
+                contentDiv.innerHTML = contentHtml;
+                modal.style.display = "flex";
+                void modal.offsetHeight; // force reflow for opacity and scale transition
+                modal.classList.add("open");
+            }
 
             if (!privacyLoaded) {
+                if (loader) loader.style.display = "flex";
+
                 fetch("privacy.html")
                     .then(response => {
                         if (!response.ok) {
@@ -2719,12 +2772,12 @@
                             privacyHtmlContent = html;
                         }
                         
-                        contentDiv.innerHTML = privacyHtmlContent;
                         privacyLoaded = true;
+                        showModalWithContent(privacyHtmlContent);
                     })
                     .catch(error => {
                         console.error("Error loading privacy page:", error);
-                        contentDiv.innerHTML = `
+                        const errorHtml = `
                             <div style="color: var(--neon-pink); text-align: center; padding: 20px;">
                                 <strong>ERROR LOADING PRIVACY PROTOCOL</strong><br>
                                 <span style="font-size: 11px; color: #64748b;">${error.message}</span>
@@ -2732,18 +2785,23 @@
                                 <a href="privacy.html" target="_blank" style="color: var(--neon-cyan); border: 1px solid var(--neon-cyan); padding: 6px 12px; border-radius: 4px; display: inline-block; margin-top: 10px; font-family: 'Orbitron', sans-serif; font-size: 11px; text-decoration: none;">OPEN DIRECTLY</a>
                             </div>
                         `;
+                        showModalWithContent(errorHtml);
                     });
             } else {
-                contentDiv.innerHTML = privacyHtmlContent;
+                showModalWithContent(privacyHtmlContent);
             }
         }
 
         function closePrivacyModal() {
             const overlay = document.getElementById("privacy-modal-overlay");
             const modal = document.getElementById("privacy-modal");
+            const loader = document.getElementById("privacy-loader");
             if (overlay && modal) {
                 overlay.classList.remove("open");
                 modal.classList.remove("open");
+                if (loader) {
+                    loader.style.display = "none";
+                }
                 setTimeout(() => {
                     if (!overlay.classList.contains("open")) {
                         overlay.style.display = "none";

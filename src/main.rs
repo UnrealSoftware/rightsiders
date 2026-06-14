@@ -525,10 +525,10 @@ async fn main() {
                     }
                 } else {
                     // Desktop keyboard controls
-                    if is_key_pressed(KeyCode::A) {
+                    if is_key_pressed(KeyCode::A) || is_key_pressed(KeyCode::Left) {
                         switch_lane_left = true;
                     }
-                    if is_key_pressed(KeyCode::D) {
+                    if is_key_pressed(KeyCode::D) || is_key_pressed(KeyCode::Right) {
                         switch_lane_right = true;
                     }
 

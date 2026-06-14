@@ -381,28 +381,49 @@ impl Raycaster {
                 steps += 1;
             }
 
-            if !hit {
-                self.z_buffer[x] = f32::MAX;
-                continue;
-            }
+             if !hit {
+                 self.z_buffer[x] = f32::MAX;
+                 continue;
+             }
 
-            // Calculate perp wall distance to avoid fish-eye
-            let perp_wall_dist = if side == 0 {
-                side_dist_x - delta_dist_x
-            } else {
-                side_dist_y - delta_dist_y
+             let wx = map_x.rem_euclid(MAP_WIDTH as i32) as usize;
+             let wy = map_y.rem_euclid(MAP_HEIGHT as i32) as usize;
+
+             // Calculate perp wall distance to avoid fish-eye
+             let perp_wall_dist = if side == 0 {
+                 side_dist_x - delta_dist_x
+             } else {
+                 side_dist_y - delta_dist_y
+             };
+             
+             // Protect against division by zero
+             let perp_wall_dist = if perp_wall_dist < 0.01 { 0.01 } else { perp_wall_dist };
+             self.z_buffer[x] = perp_wall_dist;
+
+             // Calculate height of wall strip to draw (height = 1.0 unit)
+             let line_height = (HEIGHT as f32 / perp_wall_dist) as i32;
+
+             // Offset based on camera height pos_z = 0.4
+             let pos_z = 0.4_f32;
+
+             // Determine wall height based on coordinates for a dynamic skyline (skyscrapers)
+             let wall_h = match wall_style {
+                 3 => 11.0_f32, // Police HQ is a massive skyscraper
+                2 => {
+                    // Billboard buildings (varies between 5.0 and 7.0)
+                    5.0_f32 + (((wx * 11 + wy * 19) % 3) as f32)
+                }
+                1 => {
+                    // Tech buildings (varies between 6.0 and 8.0)
+                    6.0_f32 + (((wx * 7 + wy * 13) % 3) as f32)
+                }
+                _ => {
+                    // Neon Grid skyscrapers (varies between 7.0 and 10.0)
+                    7.0_f32 + (((wx * 17 + wy * 23) % 4) as f32)
+                }
             };
-            
-            // Protect against division by zero
-            let perp_wall_dist = if perp_wall_dist < 0.01 { 0.01 } else { perp_wall_dist };
-            self.z_buffer[x] = perp_wall_dist;
 
-            // Calculate height of wall strip to draw
-            let line_height = (HEIGHT as f32 / perp_wall_dist) as i32;
-
-            // Offset based on camera height pos_z = 0.4
-            let pos_z = 0.4_f32;
-            let draw_start = -( (1.0 - pos_z) * line_height as f32 ) as i32 + HEIGHT as i32 / 2;
+            let draw_start = -( (wall_h - pos_z) * line_height as f32 ) as i32 + HEIGHT as i32 / 2;
             let draw_end = ( pos_z * line_height as f32 ) as i32 + HEIGHT as i32 / 2;
 
             // Clamp vertical lines to screen space
@@ -440,7 +461,7 @@ impl Raycaster {
             let mut tex_y_fp = (draw_start_clamped as i32 - draw_start) as f32 * step;
 
             for y in draw_start_clamped..draw_end_clamped {
-                let tex_y = (tex_y_fp as usize).min(TEX_SIZE - 1);
+                let tex_y = ((tex_y_fp as i32).rem_euclid(TEX_SIZE as i32)) as usize;
                 let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
 
                 // Shade pixel color components (RGBA format using optimized integer math)
