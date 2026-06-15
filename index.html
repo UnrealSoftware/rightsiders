@@ -1314,6 +1314,91 @@
             return isMobile;
         }
 
+        // Shared Utilities & Helpers
+        function writeStringToWasm(str, ptr, max_len) {
+            const encoder = new TextEncoder();
+            const bytes = encoder.encode(str);
+            const len = Math.min(bytes.length, max_len);
+            const view = new Uint8Array(wasm_memory.buffer, ptr, len);
+            view.set(bytes.subarray(0, len));
+            return len;
+        }
+
+        function requestFullscreen() {
+            const docEl = document.documentElement;
+            const isCurrentlyFullscreen = document.fullscreenElement || 
+                                          document.webkitFullscreenElement || 
+                                          document.mozFullScreenElement || 
+                                          document.msFullscreenElement;
+            if (!isCurrentlyFullscreen) {
+                if (docEl.requestFullscreen) {
+                    docEl.requestFullscreen().catch((err) => {
+                        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+                        handleFullscreenUnsupported();
+                    });
+                } else if (docEl.webkitRequestFullscreen) {
+                    try {
+                        docEl.webkitRequestFullscreen();
+                    } catch (err) {
+                        console.warn("Error attempting to enable webkit fullscreen:", err);
+                        handleFullscreenUnsupported();
+                    }
+                } else {
+                    console.warn("Fullscreen API not supported on this device/browser");
+                    handleFullscreenUnsupported();
+                }
+            }
+        }
+
+        function openOverlayModal(overlayId, modalId, modalDisplayStyle = "block") {
+            const overlay = document.getElementById(overlayId);
+            const modal = document.getElementById(modalId);
+            if (!overlay) return;
+            
+            overlay.style.display = "block";
+            if (modal) {
+                modal.style.display = modalDisplayStyle;
+                void modal.offsetHeight; // Force reflow for CSS transitions
+                modal.classList.add("open");
+            }
+            overlay.classList.add("open");
+        }
+
+        function closeOverlayModal(overlayId, modalId) {
+            const overlay = document.getElementById(overlayId);
+            const modal = document.getElementById(modalId);
+            if (!overlay) return;
+            
+            overlay.classList.remove("open");
+            if (modal) modal.classList.remove("open");
+            
+            setTimeout(() => {
+                if (!overlay.classList.contains("open")) {
+                    overlay.style.display = "none";
+                    if (modal) modal.style.display = "none";
+                }
+            }, 250);
+        }
+
+        function bindModalClose(overlayId, modalId, buttonIds, closeFn) {
+            const overlay = document.getElementById(overlayId);
+            if (overlay) {
+                overlay.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    closeFn();
+                });
+            }
+            buttonIds.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        closeFn();
+                    });
+                }
+            });
+        }
+
         // JS Touch control variables
         let jsSwitchLaneLeft = false;
         let jsSwitchLaneRight = false;
@@ -1546,19 +1631,7 @@
                 if (helpOverlayBackdrop) helpOverlayBackdrop.classList.remove("open");
             }
             
-            const closeHelpBtn = document.getElementById("close-help-modal");
-            if (closeHelpBtn) {
-                closeHelpBtn.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeHelp();
-                });
-            }
-            if (helpOverlayBackdrop) {
-                helpOverlayBackdrop.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeHelp();
-                });
-            }
+            bindModalClose("help-modal-overlay", "help-overlay", ["close-help-modal"], closeHelp);
             
             window.addEventListener("keydown", (e) => {
                 if (enteringHighscore) return;
@@ -1569,28 +1642,12 @@
 
             toggleFullscreen = () => {
                 if (enteringHighscore) return;
-                const docEl = document.documentElement;
                 const isCurrentlyFullscreen = document.fullscreenElement || 
                                               document.webkitFullscreenElement || 
                                               document.mozFullScreenElement || 
                                               document.msFullscreenElement;
                 if (!isCurrentlyFullscreen) {
-                    if (docEl.requestFullscreen) {
-                        docEl.requestFullscreen().catch((err) => {
-                            console.error(`Error attempting to enable fullscreen: ${err.message}`);
-                            handleFullscreenUnsupported();
-                        });
-                    } else if (docEl.webkitRequestFullscreen) {
-                        try {
-                            docEl.webkitRequestFullscreen();
-                        } catch (err) {
-                            console.warn("Error attempting to enable webkit fullscreen:", err);
-                            handleFullscreenUnsupported();
-                        }
-                    } else {
-                        console.warn("Fullscreen API not supported on this device/browser");
-                        handleFullscreenUnsupported();
-                    }
+                    requestFullscreen();
                 } else {
                     if (document.exitFullscreen) {
                         document.exitFullscreen();
@@ -1623,20 +1680,8 @@
             }
 
             // Hook up music modal controls
-            const closeMusicBtn = document.getElementById("close-music-modal");
-            if (closeMusicBtn) {
-                closeMusicBtn.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeMusicModal();
-                });
-            }
-            const musicOverlay = document.getElementById("music-modal-overlay");
-            if (musicOverlay) {
-                musicOverlay.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeMusicModal();
-                });
-            }
+            bindModalClose("music-modal-overlay", "music-modal", ["close-music-modal"], closeMusicModal);
+            
             const stopMusicBtn = document.getElementById("stop-music-btn");
             if (stopMusicBtn) {
                 stopMusicBtn.addEventListener("click", (e) => {
@@ -1647,43 +1692,10 @@
             }
 
             // Hook up privacy modal controls
-            const closePrivacyBtn = document.getElementById("close-privacy-modal");
-            if (closePrivacyBtn) {
-                closePrivacyBtn.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closePrivacyModal();
-                });
-            }
-            const privacyOverlay = document.getElementById("privacy-modal-overlay");
-            if (privacyOverlay) {
-                privacyOverlay.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closePrivacyModal();
-                });
-            }
+            bindModalClose("privacy-modal-overlay", "privacy-modal", ["close-privacy-modal"], closePrivacyModal);
 
             // Hook up fullscreen helper modal controls
-            const closeFsBtn = document.getElementById("close-fs-modal");
-            if (closeFsBtn) {
-                closeFsBtn.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeFsModal();
-                });
-            }
-            const closeFsBtnVal = document.getElementById("close-fs-modal-btn");
-            if (closeFsBtnVal) {
-                closeFsBtnVal.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeFsModal();
-                });
-            }
-            const fsOverlay = document.getElementById("fs-modal-overlay");
-            if (fsOverlay) {
-                fsOverlay.addEventListener("click", (e) => {
-                    e.stopPropagation();
-                    closeFsModal();
-                });
-            }
+            bindModalClose("fs-modal-overlay", "fs-modal", ["close-fs-modal", "close-fs-modal-btn"], closeFsModal);
 
             // Startup typewriter sequence
             const startupLines = [
@@ -1782,31 +1794,8 @@
                     e.stopPropagation();
 
                     // Automatically switch to fullscreen on mobile devices when starting
-                    const isMobile = isMobileDevice();
-                    if (isMobile) {
-                        const docEl = document.documentElement;
-                        const isCurrentlyFullscreen = document.fullscreenElement || 
-                                                      document.webkitFullscreenElement || 
-                                                      document.mozFullScreenElement || 
-                                                      document.msFullscreenElement;
-                        if (!isCurrentlyFullscreen) {
-                            if (docEl.requestFullscreen) {
-                                docEl.requestFullscreen().catch((err) => {
-                                    console.error(`Error attempting to enable fullscreen: ${err.message}`);
-                                    handleFullscreenUnsupported();
-                                });
-                            } else if (docEl.webkitRequestFullscreen) {
-                                try {
-                                    docEl.webkitRequestFullscreen();
-                                } catch (err) {
-                                    console.warn("Error attempting to enable webkit fullscreen:", err);
-                                    handleFullscreenUnsupported();
-                                }
-                            } else {
-                                console.warn("Fullscreen API not supported on this device/browser");
-                                handleFullscreenUnsupported();
-                            }
-                        }
+                    if (isMobileDevice()) {
+                        requestFullscreen();
                     }
 
                     // Initialize audio playlist
@@ -1996,12 +1985,7 @@
                 };
                 importObject.env.get_mobile_highscore_name_js = (ptr, max_len) => {
                     try {
-                        const encoder = new TextEncoder();
-                        const bytes = encoder.encode(mobileHighscoreName);
-                        const len = Math.min(bytes.length, max_len);
-                        const view = new Uint8Array(wasm_memory.buffer, ptr, len);
-                        view.set(bytes.subarray(0, len));
-                        return len;
+                        return writeStringToWasm(mobileHighscoreName, ptr, max_len);
                     } catch (e) {
                         console.error("get_mobile_highscore_name_js error:", e);
                         return 0;
@@ -2041,16 +2025,8 @@
                 };
                 importObject.env.load_scores_js = (ptr, max_len) => {
                     try {
-                        let scoresStr = localStorage.getItem("highscore");
-                        if (!scoresStr) {
-                            scoresStr = "APX:2500,LAW:2000,KXX:1500,PRM:1000,SEC:800,COP:600,DED:500,BAD:400,OUT:300,AAA:100";
-                        }
-                        const encoder = new TextEncoder();
-                        const bytes = encoder.encode(scoresStr);
-                        const len = Math.min(bytes.length, max_len);
-                        const view = new Uint8Array(wasm_memory.buffer, ptr, len);
-                        view.set(bytes.subarray(0, len));
-                        return len;
+                        const scoresStr = localStorage.getItem("highscore") || "APX:2500,LAW:2000,KXX:1500,PRM:1000,SEC:800,COP:600,DED:500,BAD:400,OUT:300,AAA:100";
+                        return writeStringToWasm(scoresStr, ptr, max_len);
                     } catch (e) {
                         console.error("load_scores_js error:", e);
                         return 0;
@@ -2634,11 +2610,8 @@
         }
 
         function openMusicModal() {
-            const overlay = document.getElementById("music-modal-overlay");
-            const modal = document.getElementById("music-modal");
             const trackListDiv = document.getElementById("track-list");
-
-            if (!overlay || !modal || !trackListDiv) return;
+            if (!trackListDiv) return;
 
             // Clear previous items
             trackListDiv.innerHTML = "";
@@ -2674,29 +2647,11 @@
                 }
             }
 
-            overlay.style.display = "block";
-            modal.style.display = "block";
-
-            // Force reflow
-            void modal.offsetHeight;
-
-            overlay.classList.add("open");
-            modal.classList.add("open");
+            openOverlayModal("music-modal-overlay", "music-modal", "block");
         }
 
         function closeMusicModal() {
-            const overlay = document.getElementById("music-modal-overlay");
-            const modal = document.getElementById("music-modal");
-            if (overlay && modal) {
-                overlay.classList.remove("open");
-                modal.classList.remove("open");
-                setTimeout(() => {
-                    if (!overlay.classList.contains("open")) {
-                        overlay.style.display = "none";
-                        modal.style.display = "none";
-                    }
-                }, 250);
-            }
+            closeOverlayModal("music-modal-overlay", "music-modal");
         }
 
         let privacyLoaded = false;
@@ -2787,22 +2742,11 @@
         }
 
         function closePrivacyModal() {
-            const overlay = document.getElementById("privacy-modal-overlay");
-            const modal = document.getElementById("privacy-modal");
             const loader = document.getElementById("privacy-loader");
-            if (overlay && modal) {
-                overlay.classList.remove("open");
-                modal.classList.remove("open");
-                if (loader) {
-                    loader.style.display = "none";
-                }
-                setTimeout(() => {
-                    if (!overlay.classList.contains("open")) {
-                        overlay.style.display = "none";
-                        modal.style.display = "none";
-                    }
-                }, 250);
+            if (loader) {
+                loader.style.display = "none";
             }
+            closeOverlayModal("privacy-modal-overlay", "privacy-modal");
         }
 
         function handleFullscreenUnsupported() {
@@ -2817,29 +2761,21 @@
         }
 
         function openFsModal() {
-            const overlay = document.getElementById("fs-modal-overlay");
-            const modal = document.getElementById("fs-modal");
-            if (overlay && modal) {
-                overlay.style.display = "block";
-                modal.style.display = "block";
-                void modal.offsetHeight; // force reflow
-                overlay.classList.add("open");
-                modal.classList.add("open");
-            }
+            openOverlayModal("fs-modal-overlay", "fs-modal", "block");
         }
 
         function closeFsModal() {
-            const overlay = document.getElementById("fs-modal-overlay");
-            const modal = document.getElementById("fs-modal");
-            if (overlay && modal) {
-                overlay.classList.remove("open");
-                modal.classList.remove("open");
-                setTimeout(() => {
-                    if (!overlay.classList.contains("open")) {
-                        overlay.style.display = "none";
-                        modal.style.display = "none";
-                    }
-                }, 250);
+            closeOverlayModal("fs-modal-overlay", "fs-modal");
+        }
+
+        function stopCurrentTrack() {
+            if (currentAudio) {
+                try {
+                    currentAudio.pause();
+                    currentAudio.onended = null;
+                } catch (e) {
+                    console.warn("Failed to pause currentAudio:", e);
+                }
             }
         }
 
@@ -2859,14 +2795,7 @@
                 }
             }
 
-            if (currentAudio) {
-                try {
-                    currentAudio.pause();
-                    currentAudio.onended = null;
-                } catch (e) {
-                    console.warn("Failed to pause currentAudio:", e);
-                }
-            }
+            stopCurrentTrack();
 
             currentTrackIndex = index;
             const trackUrl = tracks[currentTrackIndex];
@@ -2897,14 +2826,7 @@
         }
 
         function stopMusic() {
-            if (currentAudio) {
-                try {
-                    currentAudio.pause();
-                    currentAudio.onended = null;
-                } catch (e) {
-                    console.warn("Failed to pause currentAudio:", e);
-                }
-            }
+            stopCurrentTrack();
             const nowPlayingDiv = document.getElementById("now-playing");
             if (nowPlayingDiv) {
                 nowPlayingDiv.style.opacity = "0";
@@ -2916,15 +2838,6 @@
         }
 
         function playRandomTrack() {
-            if (currentAudio) {
-                try {
-                    currentAudio.pause();
-                    currentAudio.onended = null;
-                } catch (e) {
-                    console.warn("Failed to pause currentAudio:", e);
-                }
-            }
-
             let nextIndex;
             if (tracks.length > 1) {
                 do {
@@ -2933,35 +2846,7 @@
             } else {
                 nextIndex = 0;
             }
-            currentTrackIndex = nextIndex;
-
-            const trackUrl = tracks[currentTrackIndex];
-            console.log("Playing track:", trackUrl);
-
-            const trackName = getTrackName(trackUrl);
-            const nowPlayingDiv = document.getElementById("now-playing");
-            if (nowPlayingDiv) {
-                nowPlayingDiv.style.opacity = "0";
-                setTimeout(() => {
-                    nowPlayingDiv.textContent = "NOW PLAYING: " + trackName;
-                    nowPlayingDiv.style.opacity = "1";
-                }, 300);
-            }
-
-            try {
-                currentAudio = new Audio(trackUrl);
-                currentAudio.volume = 0.35;
-
-                currentAudio.play().catch(err => {
-                    console.error("Audio playback error:", err);
-                });
-
-                currentAudio.onended = () => {
-                    playRandomTrack();
-                };
-            } catch (err) {
-                console.error("Failed to initialize or play random track:", err);
-            }
+            playSpecificTrack(nextIndex);
         }
 
         // Run Macroquad WebAssembly
