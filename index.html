@@ -383,7 +383,7 @@
             height: 100%;
             background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
             border-radius: 3px;
-            animation: loadProgress 2.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            animation: loadProgress 1.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
             position: relative;
         }
 
@@ -1359,7 +1359,7 @@
                     if (charIdx < originalText.length) {
                         hudTextEl.textContent = originalText.slice(0, charIdx + 1) + "_";
                         charIdx++;
-                        setTimeout(typeHudText, 30); // Type speed
+                        setTimeout(typeHudText, 30);
                     } else {
                         hudTextEl.textContent = originalText;
                     }
@@ -1700,32 +1700,32 @@
             let startupCharIdx = 0;
 
             function typeStartupLine() {
-                if (startupLineIdx < startupLines.length) {
-                    const line = startupLines[startupLineIdx];
-                    let lineDiv = startupContainer.children[startupLineIdx];
-                    if (!lineDiv) {
-                        lineDiv = document.createElement("div");
-                        lineDiv.className = "loader-line";
-                        if (line.color) lineDiv.style.color = line.color;
-                        if (line.bold) lineDiv.style.fontWeight = "bold";
-                        startupContainer.appendChild(lineDiv);
-                    }
+                if (startupLineIdx >= startupLines.length) { return; }
+				
+				const line = startupLines[startupLineIdx];
+				let lineDiv = startupContainer.children[startupLineIdx];
+				if (!lineDiv) {
+					lineDiv = document.createElement("div");
+					lineDiv.className = "loader-line";
+					if (line.color) lineDiv.style.color = line.color;
+					if (line.bold) lineDiv.style.fontWeight = "bold";
+					startupContainer.appendChild(lineDiv);
+				}
 
-                    lineDiv.textContent = line.text.slice(0, startupCharIdx + 1) + "_";
-                    startupCharIdx++;
+				lineDiv.textContent = line.text.slice(0, startupCharIdx + 1) + "_";
+				startupCharIdx++;
 
-                    if (startupCharIdx >= line.text.length) {
-                        lineDiv.textContent = line.text; // Remove cursor on line end
-                        lineDiv.classList.add("flash");
-                        void lineDiv.offsetHeight; // Force reflow
-                        lineDiv.classList.remove("flash");
-                        startupLineIdx++;
-                        startupCharIdx = 0;
-                        setTimeout(typeStartupLine, 40); // Ultra-fast pause between lines
-                    } else {
-                        setTimeout(typeStartupLine, 2); // Ultra-fast typing speed (2ms per char)
-                    }
-                }
+				if (startupCharIdx >= line.text.length) {
+					lineDiv.textContent = line.text;
+					lineDiv.classList.add("flash");
+					void lineDiv.offsetHeight;
+					lineDiv.classList.remove("flash");
+					startupLineIdx++;
+					startupCharIdx = 0;
+					setTimeout(typeStartupLine, 30);
+				} else {
+					setTimeout(typeStartupLine, 2);
+				}
             }
 
             if (startupContainer) {
@@ -1899,8 +1899,6 @@
                 }
             }
         });
-
-
 
         // Expose a JavaScript function hook into Macroquad imports object
         miniquad_add_plugin({
@@ -2621,7 +2619,7 @@
         }
 
         function startMusic() {
-            if (currentAudio) return; // already playing
+            if (currentAudio) return;
             const firstTrackIndex = tracks.findIndex(t => t.endsWith('right_siders.mp3'));
             if (firstTrackIndex !== -1) {
                 playSpecificTrack(firstTrackIndex);
@@ -2632,9 +2630,7 @@
 
         function getTrackName(url) {
             const filename = url.substring(url.lastIndexOf('/') + 1, url.lastIndexOf('.'));
-            return filename.replace(/_/g, ' ')
-                           .replace('alpha', '(ALPHA)')
-                           .replace('beta', '(BETA)');
+            return filename.replace(/_/g, ' ');
         }
 
         function openMusicModal() {
@@ -2721,75 +2717,73 @@
 
             if (!overlay || !modal || !contentDiv) return;
 
-            // Start by displaying and opening the overlay
             overlay.style.display = "block";
-            void overlay.offsetHeight; // force reflow for opacity transition
+            void overlay.offsetHeight;
             overlay.classList.add("open");
 
-            // Helper function to animate/display the modal content
             function showModalWithContent(contentHtml) {
-                // If overlay was closed during the loading phase, do not open the modal
                 if (!overlay.classList.contains("open")) return;
 
                 if (loader) loader.style.display = "none";
                 contentDiv.innerHTML = contentHtml;
                 modal.style.display = "flex";
-                void modal.offsetHeight; // force reflow for opacity and scale transition
+                void modal.offsetHeight;
                 modal.classList.add("open");
             }
 
-            if (!privacyLoaded) {
-                if (loader) loader.style.display = "flex";
+            if (privacyLoaded) {
+				showModalWithContent(privacyHtmlContent);
+				return;
+			}
+			
+			if (loader) loader.style.display = "flex";
 
-                fetch("privacy.html")
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error("Network response was not ok");
-                        }
-                        return response.text();
-                    })
-                    .then(html => {
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(html, "text/html");
-                        const container = doc.querySelector(".container");
-                        if (container) {
-                            // Strip the back button
-                            const backBtn = container.querySelector(".back-btn");
-                            if (backBtn) backBtn.remove();
-                            
-                            // Get control-panel contents
-                            const controlPanel = container.querySelector(".control-panel");
-                            if (controlPanel) {
-                                // Strip the <h1>Privacy Policy</h1> because our header already has it
-                                const h1 = controlPanel.querySelector("h1");
-                                if (h1) h1.remove();
+			fetch("privacy.html")
+				.then(response => {
+					if (!response.ok) {
+						throw new Error("Network response was not ok");
+					}
+					return response.text();
+				})
+				.then(html => {
+					const parser = new DOMParser();
+					const doc = parser.parseFromString(html, "text/html");
+					const container = doc.querySelector(".container");
+					if (container) {
+						// Strip the back button
+						const backBtn = container.querySelector(".back-btn");
+						if (backBtn) backBtn.remove();
+						
+						// Get control-panel contents
+						const controlPanel = container.querySelector(".control-panel");
+						if (controlPanel) {
+							// Strip the <h1>Privacy Policy</h1> because our header already has it
+							const h1 = controlPanel.querySelector("h1");
+							if (h1) h1.remove();
 
-                                privacyHtmlContent = controlPanel.innerHTML;
-                            } else {
-                                privacyHtmlContent = container.innerHTML;
-                            }
-                        } else {
-                            privacyHtmlContent = html;
-                        }
-                        
-                        privacyLoaded = true;
-                        showModalWithContent(privacyHtmlContent);
-                    })
-                    .catch(error => {
-                        console.error("Error loading privacy page:", error);
-                        const errorHtml = `
-                            <div style="color: var(--neon-pink); text-align: center; padding: 20px;">
-                                <strong>ERROR LOADING PRIVACY PROTOCOL</strong><br>
-                                <span style="font-size: 11px; color: #64748b;">${error.message}</span>
-                                <br><br>
-                                <a href="privacy.html" target="_blank" style="color: var(--neon-cyan); border: 1px solid var(--neon-cyan); padding: 6px 12px; border-radius: 4px; display: inline-block; margin-top: 10px; font-family: 'Orbitron', sans-serif; font-size: 11px; text-decoration: none;">OPEN DIRECTLY</a>
-                            </div>
-                        `;
-                        showModalWithContent(errorHtml);
-                    });
-            } else {
-                showModalWithContent(privacyHtmlContent);
-            }
+							privacyHtmlContent = controlPanel.innerHTML;
+						} else {
+							privacyHtmlContent = container.innerHTML;
+						}
+					} else {
+						privacyHtmlContent = html;
+					}
+					
+					privacyLoaded = true;
+					showModalWithContent(privacyHtmlContent);
+				})
+				.catch(error => {
+					console.error("Error loading privacy page:", error);
+					const errorHtml = `
+						<div style="color: var(--neon-pink); text-align: center; padding: 20px;">
+							<strong>ERROR LOADING PRIVACY PROTOCOL</strong><br>
+							<span style="font-size: 11px; color: #64748b;">${error.message}</span>
+							<br><br>
+							<a href="privacy.html" target="_blank" style="color: var(--neon-cyan); border: 1px solid var(--neon-cyan); padding: 6px 12px; border-radius: 4px; display: inline-block; margin-top: 10px; font-family: 'Orbitron', sans-serif; font-size: 11px; text-decoration: none;">OPEN DIRECTLY</a>
+						</div>
+					`;
+					showModalWithContent(errorHtml);
+				});
         }
 
         function closePrivacyModal() {
@@ -2956,7 +2950,7 @@
 
             try {
                 currentAudio = new Audio(trackUrl);
-                currentAudio.volume = 0.35; // keep it at a comfortable background volume
+                currentAudio.volume = 0.35;
 
                 currentAudio.play().catch(err => {
                     console.error("Audio playback error:", err);
