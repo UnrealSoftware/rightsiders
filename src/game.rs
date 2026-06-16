@@ -1,4 +1,5 @@
 use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
+use crate::raycaster::{WIDTH, HEIGHT};
 
 #[cfg(target_arch = "wasm32")]
 unsafe extern "C" {
@@ -689,8 +690,8 @@ impl GameState {
 
         // Initialize rain drops using deterministic RNG
         for _ in 0..120 {
-            let rx = rng_float(&mut state.rng_state) * 400.0;
-            let ry = rng_float(&mut state.rng_state) * 300.0;
+            let rx = rng_float(&mut state.rng_state) * WIDTH as f32;
+            let ry = rng_float(&mut state.rng_state) * HEIGHT as f32;
             let speed = 400.0 + rng_float(&mut state.rng_state) * 200.0;
             let length = 10.0 + rng_float(&mut state.rng_state) * 8.0;
             state.rain_drops.push(RainDrop {
@@ -1943,8 +1944,8 @@ impl GameState {
         }
 
         // Update raindrops
-        let width_f = 400.0_f32;
-        let height_f = 300.0_f32;
+        let width_f = WIDTH as f32;
+        let height_f = HEIGHT as f32;
         for drop in &mut self.rain_drops {
             drop.y += drop.speed * dt;
             drop.x -= 20.0 * dt; // slight wind angle to the left

@@ -5,8 +5,8 @@ use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
 use crate::game::BloodDecal;
 use macroquad::prelude::get_time;
 
-pub const WIDTH: usize = 400;
-pub const HEIGHT: usize = 300;
+pub const WIDTH: usize = 480;
+pub const HEIGHT: usize = 270;
 pub const VISIBILITY_DIST: f32 = 16.0;
 
 pub struct Raycaster {
