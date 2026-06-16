@@ -7,7 +7,7 @@ mod raycaster;
 mod game;
 
 use macroquad::prelude::*;
-use assets::{generate_assets, SpriteTexture};
+use assets::{load_game_assets, SpriteTexture};
 use raycaster::{Raycaster, WIDTH, HEIGHT, SpriteToRender};
 use game::{GameState, WeaponState, CitizenState};
 use map::{TileType, MAP_WIDTH, MAP_HEIGHT};
@@ -216,8 +216,8 @@ fn generate_crosshair_texture() -> Texture2D {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    // 1. Generate procedural assets
-    let assets_data = generate_assets();
+    // 1. Load assets from PNG files
+    let assets_data = load_game_assets().await;
     
     // (Weapon textures upload removed as weapon is hidden)
 

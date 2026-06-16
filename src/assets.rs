@@ -9,6 +9,7 @@ pub struct SpriteTexture {
     pub pixels: Vec<u32>, // RGBA format: 0xRRGGBBAA
 }
 
+#[allow(dead_code)]
 impl SpriteTexture {
     pub fn new(width: usize, height: usize, default_color: u32) -> Self {
         Self {
@@ -87,15 +88,13 @@ pub struct GameAssets {
     pub walls: Vec<SpriteTexture>,
     // Sprites (0: Citizen Walk A, 1: Citizen Walk B, 2: Rebel Walk A, 3: Rebel Walk B, 4: Explode A, 5: Explode B, 6: Dead)
     pub sprites: Vec<SpriteTexture>,
-    // Blaster Weapon (0: Idle, 1: Firing)
-    #[allow(dead_code)]
-    pub weapon: Vec<SpriteTexture>,
 }
 
+
+#[allow(dead_code)]
 pub fn generate_assets() -> GameAssets {
     let mut walls = Vec::new();
     let mut sprites = Vec::new();
-    let mut weapon = Vec::new();
 
     // COLOR PALETTE (RGBA 0xRRGGBBAA)
     let c_black = 0x00000000; // Transparent for sprites, black for walls
@@ -683,63 +682,67 @@ pub fn generate_assets() -> GameAssets {
     s24.draw_rect(20, 42, 2, 6, c_neon_yellow);
     sprites.push(s24);
 
-    // ==========================================
-    // WEAPON 0: Robo-Blaster Idle
-    // ==========================================
-    let mut w_idle = SpriteTexture::new(TEX_SIZE * 2, TEX_SIZE * 2, c_black);
-    let wx_offset = TEX_SIZE as i32; // Centering helper
-    let wy_offset = TEX_SIZE as i32;
-    // Draw player arms/glove (metallic navy-blue and black)
-    w_idle.draw_rect(wx_offset - 20, wy_offset + 30, 24, 40, c_dark_gray);
-    w_idle.draw_rect(wx_offset - 16, wy_offset + 34, 18, 36, c_gray);
-    // Gun body (sleek chrome/black)
-    w_idle.draw_rect(wx_offset - 10, wy_offset - 10, 20, 45, 0x151b26ff);
-    w_idle.draw_rect(wx_offset - 8, wy_offset - 5, 16, 40, c_gray);
-    // Cyber scope with a blue light
-    w_idle.draw_rect(wx_offset - 12, wy_offset + 10, 4, 15, c_neon_cyan);
-    w_idle.draw_circle(wx_offset - 10, wy_offset + 17, 2, c_white);
-    // Cyber glowing vents (neon cyan)
-    w_idle.draw_rect(wx_offset - 4, wy_offset + 5, 8, 3, c_neon_cyan);
-    w_idle.draw_rect(wx_offset - 4, wy_offset + 15, 8, 3, c_neon_cyan);
-    w_idle.draw_rect(wx_offset - 4, wy_offset + 25, 8, 3, c_neon_cyan);
-    // Laser Barrel pointing up-front
-    w_idle.draw_rect(wx_offset - 6, wy_offset - 25, 12, 15, c_gray);
-    w_idle.draw_rect(wx_offset - 3, wy_offset - 35, 6, 12, c_light_gray);
-    w_idle.draw_rect(wx_offset - 2, wy_offset - 36, 4, 2, c_neon_cyan); // Glow tip
-    weapon.push(w_idle);
+    GameAssets {
+        walls,
+        sprites,
+    }
+}
 
-    // ==========================================
-    // WEAPON 1: Robo-Blaster Firing
-    // ==========================================
-    let mut w_fire = SpriteTexture::new(TEX_SIZE * 2, TEX_SIZE * 2, c_black);
-    // Gun body shifted slightly down (recoil) and muzzle flash drawn
-    let recoil_y = 6;
-    w_fire.draw_rect(wx_offset - 20, wy_offset + 30 + recoil_y, 24, 40, c_dark_gray);
-    w_fire.draw_rect(wx_offset - 16, wy_offset + 34 + recoil_y, 18, 36, c_gray);
-    w_fire.draw_rect(wx_offset - 10, wy_offset - 10 + recoil_y, 20, 45, 0x151b26ff);
-    w_fire.draw_rect(wx_offset - 8, wy_offset - 5 + recoil_y, 16, 40, c_gray);
-    w_fire.draw_rect(wx_offset - 12, wy_offset + 10 + recoil_y, 4, 15, c_neon_cyan);
-    w_fire.draw_circle(wx_offset - 10, wy_offset + 17 + recoil_y, 2, c_white);
-    // Cyan vents glow brighter (white center)
-    w_fire.draw_rect(wx_offset - 4, wy_offset + 5 + recoil_y, 8, 3, c_white);
-    w_fire.draw_rect(wx_offset - 4, wy_offset + 15 + recoil_y, 8, 3, c_white);
-    w_fire.draw_rect(wx_offset - 4, wy_offset + 25 + recoil_y, 8, 3, c_white);
-    w_fire.draw_rect(wx_offset - 6, wy_offset - 25 + recoil_y, 12, 15, c_gray);
-    w_fire.draw_rect(wx_offset - 3, wy_offset - 35 + recoil_y, 6, 12, c_light_gray);
-    // MUZZLE FLASH! Large yellow/cyan starburst
-    let flash_cy = wy_offset - 35 + recoil_y;
-    w_fire.draw_circle(wx_offset, flash_cy, 18, c_neon_yellow);
-    w_fire.draw_circle(wx_offset, flash_cy, 10, c_white);
-    w_fire.draw_circle(wx_offset, flash_cy, 4, c_neon_cyan);
-    // Sparks shooting out
-    w_fire.draw_line(wx_offset, flash_cy, wx_offset - 25, flash_cy - 20, c_neon_cyan);
-    w_fire.draw_line(wx_offset, flash_cy, wx_offset + 25, flash_cy - 20, c_neon_cyan);
-    w_fire.draw_line(wx_offset, flash_cy, wx_offset, flash_cy - 30, c_white);
-    weapon.push(w_fire);
+#[allow(dead_code)]
+pub async fn load_game_assets() -> GameAssets {
+    use macroquad::texture::load_image;
+
+    // Load sprite sheets from disk/server
+    let walls_img = load_image("src/assets/walls.png").await.expect("Failed to load walls.png");
+    let sprites_img = load_image("src/assets/sprites.png").await.expect("Failed to load sprites.png");
+
+    let mut walls = Vec::new();
+    let mut sprites = Vec::new();
+
+    let wall_size = 64;
+    let sprite_size = 64;
+
+    // Extract walls (4 walls, arranged in a 2x2 grid)
+    let walls_cols = 2;
+    for i in 0..4 {
+        let grid_col = i % walls_cols;
+        let grid_row = i / walls_cols;
+        walls.push(extract_sprite(&walls_img, grid_col * wall_size, grid_row * wall_size, wall_size, wall_size));
+    }
+
+    // Extract sprites (25 sprites, arranged in a 5x5 grid)
+    let sprites_cols = 5;
+    for i in 0..25 {
+        let grid_col = i % sprites_cols;
+        let grid_row = i / sprites_cols;
+        sprites.push(extract_sprite(&sprites_img, grid_col * sprite_size, grid_row * sprite_size, sprite_size, sprite_size));
+    }
 
     GameAssets {
         walls,
         sprites,
-        weapon,
     }
 }
+
+#[allow(dead_code)]
+fn extract_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize, sw: usize, sh: usize) -> SpriteTexture {
+    let mut pixels = Vec::with_capacity(sw * sh);
+    let src_w = src.width as usize;
+    for y in sy..(sy + sh) {
+        for x in sx..(sx + sw) {
+            let idx = (y * src_w + x) * 4;
+            let r = src.bytes[idx] as u32;
+            let g = src.bytes[idx + 1] as u32;
+            let b = src.bytes[idx + 2] as u32;
+            let a = src.bytes[idx + 3] as u32;
+            let color = (r << 24) | (g << 16) | (b << 8) | a;
+            pixels.push(color);
+        }
+    }
+    SpriteTexture {
+        width: sw,
+        height: sh,
+        pixels,
+    }
+}
+
