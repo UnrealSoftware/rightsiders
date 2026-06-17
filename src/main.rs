@@ -1041,25 +1041,30 @@ async fn main() {
                     let dot = dx * c_dir_x + dy * c_dir_y;
                     let seen_from_back = dot > 0.0;
 
-                    let frame_base = if seen_from_back {
-                        if citizen.is_visually_leftsider() { 9 } else { 7 }
+                    if seen_from_back {
+                        if citizen.is_visually_leftsider() { 6 } else { 5 }
                     } else {
-                        if citizen.is_visually_leftsider() { 2 } else { 0 }
-                    };
-                    frame_base + citizen.walk_frame
+                        if citizen.is_visually_leftsider() { 1 } else { 0 }
+                    }
                 }
                 CitizenState::Exploding(t) => {
-                    if t < 0.2 { 4 } else { 5 }
+                    if t < 0.2 { 2 } else { 3 }
                 }
                 CitizenState::Dead => {
                     continue;
                 }
             };
 
+            let wobble_z = if let CitizenState::Walking = citizen.state {
+                (citizen.progress * std::f32::consts::PI * 2.0).sin().abs() * 0.06
+            } else {
+                0.0
+            };
+
             sprites_to_draw.push(SpriteToRender {
                 x: citizen.x,
                 y: citizen.y,
-                z: 0.0,
+                z: wobble_z,
                 texture_idx: tex_idx,
                 is_targeted,
                 target_color,
@@ -1102,8 +1107,8 @@ async fn main() {
                         }
 
                         if let Some((ox, oy)) = side {
-                            // Compute neon sign sprite index (22, 23, 24)
-                            let tex_idx = 22 + ((gx * 7 + gy * 13) % 3);
+                            // Compute neon sign sprite index (18, 19, 20)
+                            let tex_idx = 18 + ((gx * 7 + gy * 13) % 3);
                             let world_x = gx as f32 + ox;
                             let world_y = gy as f32 + oy;
 
@@ -1124,24 +1129,24 @@ async fn main() {
         // Push particles to sprite list
         for p in &state.particles {
             let tex_idx = match p.p_type {
-                crate::game::ParticleType::BloodSprinkle => 11,
-                crate::game::ParticleType::GoreDebris => 12,
+                crate::game::ParticleType::BloodSprinkle => 7,
+                crate::game::ParticleType::GoreDebris => 8,
                 crate::game::ParticleType::Smoke => {
                     if p.lifetime > 0.6 {
-                        14 // Hot yellow/white fire
+                        10 // Hot yellow/white fire
                     } else if p.lifetime > 0.3 {
-                        15 // Orange/pink spark
+                        11 // Orange/pink spark
                     } else {
-                        16 // Dark grey smoke
+                        12 // Dark grey smoke
                     }
                 }
                 crate::game::ParticleType::Steam => {
                     if p.lifetime > 1.2 {
-                        19 // Small steam
+                        15 // Small steam
                     } else if p.lifetime > 0.6 {
-                        20 // Medium steam
+                        16 // Medium steam
                     } else {
-                        21 // Large steam
+                        17 // Large steam
                     }
                 }
             };
@@ -1162,7 +1167,7 @@ async fn main() {
                 x: missile.x,
                 y: missile.y,
                 z: missile.z,
-                texture_idx: 13, // s13 Guided Missile sprite
+                texture_idx: 9, // s9 Guided Missile sprite
                 is_targeted: false,
                 target_color: 0,
             });

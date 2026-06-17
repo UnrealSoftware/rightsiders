@@ -282,28 +282,6 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s0);
 
     // ==========================================
-    // SPRITE 1: Compliant Citizen Walk B
-    // ==========================================
-    let mut s1 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
-    // Same citizen, inverted leg positions
-    s1.draw_circle(32, 16, 6, c_gray);
-    s1.draw_circle(32, 16, 5, c_light_gray);
-    s1.draw_rect(28, 14, 8, 2, c_neon_green);
-    s1.draw_rect(30, 22, 4, 3, c_gray);
-    s1.draw_rect(22, 25, 20, 18, c_dark_blue);
-    s1.draw_rect(24, 27, 16, 14, 0x152545ff);
-    s1.draw_rect(25, 29, 4, 10, c_neon_green);
-    s1.draw_rect(35, 29, 4, 10, c_neon_green);
-    // Arms swapped
-    s1.draw_rect(18, 26, 4, 10, c_gray);
-    s1.draw_rect(18, 36, 4, 4, c_light_gray);
-    s1.draw_rect(42, 26, 4, 12, c_gray);
-    // Legs swapped
-    s1.draw_rect(24, 43, 5, 8, c_gray);
-    s1.draw_rect(24, 51, 5, 6, c_dark_gray);
-    s1.draw_rect(33, 43, 5, 12, c_gray);
-    s1.draw_rect(33, 55, 7, 4, c_light_gray);
-    sprites.push(s1);
 
     // ==========================================
     // SPRITE 2: Violator Walk A (Red details)
@@ -335,28 +313,6 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s2);
 
     // ==========================================
-    // SPRITE 3: Violator Walk B
-    // ==========================================
-    let mut s3 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
-    // Violator Walk Frame B
-    s3.draw_circle(32, 16, 6, c_gray);
-    s3.draw_circle(32, 16, 5, c_light_gray);
-    s3.draw_rect(28, 14, 8, 2, c_red);
-    s3.draw_rect(30, 22, 4, 3, c_gray);
-    s3.draw_rect(22, 25, 20, 18, 0x330808ff);
-    s3.draw_rect(24, 27, 16, 14, 0x881515ff);
-    s3.draw_rect(25, 29, 4, 10, c_red);
-    s3.draw_rect(35, 29, 4, 10, c_red);
-    // Arms swapped
-    s3.draw_rect(18, 26, 4, 10, c_gray);
-    s3.draw_rect(18, 36, 4, 4, c_light_gray);
-    s3.draw_rect(42, 26, 4, 12, c_gray);
-    // Legs swapped
-    s3.draw_rect(24, 43, 5, 8, c_gray);
-    s3.draw_rect(24, 51, 5, 6, c_dark_gray);
-    s3.draw_rect(33, 43, 5, 12, c_gray);
-    s3.draw_rect(33, 55, 7, 4, c_light_gray);
-    sprites.push(s3);
 
     // ==========================================
     // SPRITE 4: Explode A (Blood Burst Start)
@@ -438,22 +394,6 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s7);
 
     // ==========================================
-    // SPRITE 8: Compliant Citizen Walk B (Back View)
-    // ==========================================
-    let mut s8 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
-    s8.draw_circle(32, 16, 6, c_gray);
-    s8.draw_circle(32, 16, 5, c_light_gray);
-    s8.draw_rect(30, 22, 4, 3, c_gray);
-    s8.draw_rect(22, 25, 20, 18, c_dark_blue);
-    s8.draw_rect(24, 27, 16, 14, 0x152545ff);
-    s8.draw_rect(18, 26, 4, 10, c_gray);
-    s8.draw_rect(18, 36, 4, 4, c_light_gray);
-    s8.draw_rect(42, 26, 4, 12, c_gray);
-    s8.draw_rect(24, 43, 5, 8, c_gray);
-    s8.draw_rect(24, 51, 5, 6, c_dark_gray);
-    s8.draw_rect(33, 43, 5, 12, c_gray);
-    s8.draw_rect(33, 55, 7, 4, c_light_gray);
-    sprites.push(s8);
 
     // ==========================================
     // SPRITE 9: Violator Walk A (Back View)
@@ -474,22 +414,6 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s9);
 
     // ==========================================
-    // SPRITE 10: Violator Walk B (Back View)
-    // ==========================================
-    let mut s10 = SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black);
-    s10.draw_circle(32, 16, 6, c_gray);
-    s10.draw_circle(32, 16, 5, c_light_gray);
-    s10.draw_rect(30, 22, 4, 3, c_gray);
-    s10.draw_rect(22, 25, 20, 18, 0x330808ff);
-    s10.draw_rect(24, 27, 16, 14, 0x881515ff);
-    s10.draw_rect(18, 26, 4, 10, c_gray);
-    s10.draw_rect(18, 36, 4, 4, c_light_gray);
-    s10.draw_rect(42, 26, 4, 12, c_gray);
-    s10.draw_rect(24, 43, 5, 8, c_gray);
-    s10.draw_rect(24, 51, 5, 6, c_dark_gray);
-    s10.draw_rect(33, 43, 5, 12, c_gray);
-    s10.draw_rect(33, 55, 7, 4, c_light_gray);
-    sprites.push(s10);
 
     // ==========================================
     // SPRITE 11: Blood Sprinkle (Pixelated droplet)
@@ -710,9 +634,9 @@ pub async fn load_game_assets() -> GameAssets {
         walls.push(extract_sprite(&walls_img, grid_col * wall_size, grid_row * wall_size, wall_size, wall_size));
     }
 
-    // Extract sprites (25 sprites, arranged in a 5x5 grid)
+    // Extract sprites (21 sprites, arranged in a 5x5 grid)
     let sprites_cols = 5;
-    for i in 0..25 {
+    for i in 0..21 {
         let grid_col = i % sprites_cols;
         let grid_row = i / sprites_cols;
         sprites.push(extract_sprite(&sprites_img, grid_col * sprite_size, grid_row * sprite_size, sprite_size, sprite_size));

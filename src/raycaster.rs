@@ -555,14 +555,14 @@ impl Raycaster {
             let pos_z = 0.4_f32; // Camera height
             let full_height = (HEIGHT as f32 / transform_y).abs() as i32;
             let scale = match sprite.texture_idx {
-                11 => 0.15, // Blood sprinkle
-                12 => 0.25, // Meat chunk
-                13 => 0.22, // Guided missile glowing sphere
-                14 | 15 | 16 => 0.35, // Smoke trail particles
-                19 => 0.25, // Steam small
-                20 => 0.45, // Steam medium
-                21 => 0.65, // Steam large
-                22 | 23 | 24 => 0.70, // Neon signs
+                7 => 0.15, // Blood sprinkle
+                8 => 0.25, // Meat chunk
+                9 => 0.22, // Guided missile glowing sphere
+                10 | 11 | 12 => 0.35, // Smoke trail particles
+                15 => 0.25, // Steam small
+                16 => 0.45, // Steam medium
+                17 => 0.65, // Steam large
+                18 | 19 | 20 => 0.70, // Neon signs
                 _ => 0.60,  // Citizens
             };
             let sprite_height = (full_height as f32 * scale) as i32;

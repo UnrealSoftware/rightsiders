@@ -803,7 +803,7 @@ impl GameState {
         // Speed: hover vehicles should travel faster than walking citizens (0.6 - 1.2)
         let speed = 1.8 + rng_float(&mut self.rng_state) * 1.4;
 
-        let sprite_idx = if val % 2 == 0 { 17 } else { 18 };
+        let sprite_idx = if val % 2 == 0 { 13 } else { 14 };
         let hover_speed = 3.0 + rng_float(&mut self.rng_state) * 2.0;
 
         let mut vehicle = Vehicle {
