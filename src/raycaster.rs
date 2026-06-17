@@ -468,9 +468,6 @@ impl Raycaster {
             }
             let tex_x = tex_x.clamp(0, TEX_SIZE as i32 - 1) as usize;
 
-            // Fetch texture
-            let texture = &assets.walls[wall_style as usize];
-
             // Shading & Fog factors
             let side_shading = if side == 1 { 0.70 } else { 1.0 }; // Darken Y walls
             let fog = (1.0 - (perp_wall_dist / VISIBILITY_DIST)).clamp(0.0, 1.0);
@@ -481,8 +478,65 @@ impl Raycaster {
             let step = (TEX_SIZE as f32) / (line_height as f32);
             let mut tex_y_fp = (draw_start_clamped as i32 - draw_start) as f32 * step;
 
+            let num_walls = assets.walls.len();
+            let max_tile_y = wall_h as i32 - 1;
+
+            // Precompute frames for this column (up to 32 tiles high)
+            let mut column_frames = [0usize; 32];
+            let mut has_transitioned = false;
+
+            for tile_y in 0..=max_tile_y {
+                let idx = tile_y as usize;
+                if idx >= 32 { break; }
+
+                if tile_y == 0 {
+                    let frame = if num_walls >= 2 {
+                        let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
+                        (hash as usize) % 2
+                    } else {
+                        0
+                    };
+                    column_frames[idx] = frame;
+                } else if (tile_y == 1 || tile_y == 2) && !has_transitioned {
+                    let hash = (wx as u32).wrapping_mul(73856093)
+                        ^ (wy as u32).wrapping_mul(19349663)
+                        ^ (tile_y as u32).wrapping_mul(83492791)
+                        ^ 0xabcdef;
+                    let choice = (hash as usize) % num_walls;
+                    if choice < 2 {
+                        column_frames[idx] = choice;
+                    } else {
+                        column_frames[idx] = choice;
+                        has_transitioned = true;
+                    }
+                } else {
+                    let frame = if num_walls > 2 {
+                        let remaining = num_walls - 2;
+                        let hash = (wx as u32).wrapping_mul(73856093)
+                            ^ (wy as u32).wrapping_mul(19349663)
+                            ^ (tile_y as u32).wrapping_mul(83492791)
+                            ^ 0xabcdef;
+                        2 + (hash as usize) % remaining
+                    } else {
+                        0
+                    };
+                    column_frames[idx] = frame;
+                }
+            }
+
+            let mut current_tile_y = -1;
+            let mut texture = &assets.walls[0]; // dummy initial value
+
             for y in draw_start_clamped..draw_end_clamped {
                 let tex_y = ((tex_y_fp as i32).rem_euclid(TEX_SIZE as i32)) as usize;
+                let tile_y = (max_tile_y - (tex_y_fp as i32 / TEX_SIZE as i32)).clamp(0, max_tile_y);
+
+                if tile_y != current_tile_y {
+                    current_tile_y = tile_y;
+                    let frame_idx = column_frames[(tile_y as usize).min(31)];
+                    texture = &assets.walls[frame_idx];
+                }
+
                 let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
 
                 // Shade pixel color components (RGBA format using optimized integer math)

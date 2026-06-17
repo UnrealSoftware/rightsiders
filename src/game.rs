@@ -20,6 +20,7 @@ unsafe extern "C" {
     fn open_privacy_modal_js();
     fn open_music_modal_js();
     fn toggle_help_js();
+    fn hide_help_js();
     fn toggle_fullscreen_js();
 }
 
@@ -587,6 +588,9 @@ pub struct GameState {
     pub highscore_input_delay: f32,
     pub last_beep_second: i32,
     pub show_leaderboard: bool,
+    pub show_directives: bool,
+    pub directives_stage: usize,
+    pub directives_timer: f32,
     pub leaderboard_data: Vec<(String, i32)>,
     pub leaderboard_open_time: f64,
     pub new_rank: Option<usize>,
@@ -678,6 +682,9 @@ impl GameState {
             summary_skip_buildup: false,
             last_beep_second: 6,
             show_leaderboard: false,
+            show_directives: false,
+            directives_stage: 0,
+            directives_timer: 0.0,
             leaderboard_data: Vec::new(),
             leaderboard_open_time: 0.0,
             new_rank: None,
@@ -2267,6 +2274,17 @@ pub fn toggle_help() {
     #[cfg(not(target_arch = "wasm32"))]
     {
         println!("[toggle_help]");
+    }
+}
+
+pub fn hide_help() {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        hide_help_js();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        println!("[hide_help]");
     }
 }
 

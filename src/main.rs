@@ -294,7 +294,7 @@ async fn main() {
         let btn_font_size = 7.5 * ui_scale;
         let play_text = "ENFORCE CIVIC DIRECTIVES";
         let highscore_text = "UNIT LEADERBOARD";
-        let level_text = "SECTOR SELECTION";
+        let level_text = "INSTRUCTIONS";
 
         let play_dim = measure_text(play_text, Some(&font), btn_font_size as u16, 1.0);
         let highscore_dim = measure_text(highscore_text, Some(&font), btn_font_size as u16, 1.0);
@@ -322,7 +322,31 @@ async fn main() {
         let mut switch_lane_left = false;
         let mut switch_lane_right = false;
 
-        if state.show_leaderboard {
+        if state.show_directives {
+            let trigger = is_key_pressed(KeyCode::R) || 
+                          is_mouse_button_pressed(MouseButton::Left) || 
+                          (game::is_mobile() && game::js_get_trigger_fire());
+            if trigger {
+                if state.directives_stage < 3 {
+                    state.directives_stage += 1;
+                    state.directives_timer = 0.0;
+                    game::play_sound("menu_pling");
+                } else {
+                    state.show_directives = false;
+                    state.directives_stage = 0;
+                    state.directives_timer = 0.0;
+                    state.is_in_menu = true;
+                    state.menu_timer = 0.0;
+                    state.slogan_chars_played = 0;
+                    state.menu_title_landed = false;
+                    state.menu_star_played = false;
+                    state.menu_particles.clear();
+                    state.menu_shockwaves.clear();
+                    game::update_menu_active_js(true);
+                    game::play_sound("laser");
+                }
+            }
+        } else if state.show_leaderboard {
             let trigger = is_key_pressed(KeyCode::R) || 
                           is_mouse_button_pressed(MouseButton::Left) || 
                           (game::is_mobile() && game::js_get_trigger_fire());
@@ -504,7 +528,14 @@ async fn main() {
                                     state.menu_shockwaves.clear();
                                     game::play_sound("explosion");
                                 } else {
-                                    game::play_sound("collateral"); // Error buzz
+                                     state.show_directives = true;
+                                     state.directives_stage = 0;
+                                     state.directives_timer = 0.0;
+                                     state.is_in_menu = false; // deactivate menu to show directives overlay
+                                     state.menu_timer = 0.0;
+                                     state.menu_shockwaves.clear();
+                                     game::hide_help();
+                                     game::play_sound("explosion");
                                 }
                             }
                         }
@@ -590,7 +621,7 @@ async fn main() {
         // ==========================================
         // GAME STATE UPDATE
         // ==========================================
-        if !is_game_over && !is_bankrupt && !state.show_leaderboard {
+        if !is_game_over && !is_bankrupt && !state.show_leaderboard && !state.show_directives {
             if !state.is_showing_summary {
                 state.move_player(switch_lane_left, switch_lane_right);
                 state.update(dt);
@@ -615,6 +646,7 @@ async fn main() {
                 let should_end = !state.is_in_menu && state.time_left <= 0.0;
                 if should_end {
                     state.is_showing_summary = true;
+                    state.screen_shake = 0.0;
                     state.summary_timer = 0.0;
                     state.summary_stage = 0;
                     state.summary_count_anim = 0.0;
@@ -781,6 +813,9 @@ async fn main() {
                     }
                 }
             }
+        } else if state.show_directives {
+            let directives_dt = get_frame_time().min(0.08);
+            state.directives_timer += directives_dt;
         } else {
             if state.is_entering_highscore {
                 if state.highscore_input_delay > 0.0 {
@@ -1783,21 +1818,21 @@ async fn main() {
                     &font,
                 );
 
-                // Button 3 (Level Select) - Grayed Out / Unavailable
+                // Button 3 (Civic Directive Manual)
                 let level_bg_col = if state.menu_selected_idx == 2 || hover_level {
-                    Color::from_rgba(25, 25, 30, (120.0 * buttons_alpha) as u8)
+                    Color::from_rgba(0, 240, 255, (80.0 * buttons_alpha) as u8)
                 } else {
-                    Color::from_rgba(10, 10, 12, (150.0 * buttons_alpha) as u8)
+                    Color::from_rgba(10, 15, 25, (180.0 * buttons_alpha) as u8)
                 };
                 let level_border_col = if state.menu_selected_idx == 2 {
-                    Color::from_rgba(140, 140, 150, (200.0 * buttons_alpha) as u8)
+                    Color::from_rgba(0, 240, 255, (255.0 * buttons_alpha) as u8)
                 } else {
-                    Color::from_rgba(70, 70, 75, (100.0 * buttons_alpha) as u8)
+                    Color::from_rgba(0, 240, 255, (60.0 * buttons_alpha) as u8)
                 };
                 let level_text_col = if state.menu_selected_idx == 2 || hover_level {
-                    Color::from_rgba(150, 150, 160, (225.0 * buttons_alpha) as u8)
+                    WHITE
                 } else {
-                    Color::from_rgba(90, 90, 100, (150.0 * buttons_alpha) as u8)
+                    Color::from_rgba(180, 200, 220, (180.0 * buttons_alpha) as u8)
                 };
 
                 let lvl_shake_x = if state.menu_selected_idx == 2 {
@@ -2506,7 +2541,7 @@ async fn main() {
             // ==========================================
             // RUST-BASED GAME OVER & LEADERBOARD OVERLAYS
             // ==========================================
-            if is_game_over || is_bankrupt || state.show_leaderboard {
+            if is_game_over || is_bankrupt || state.show_leaderboard || state.show_directives {
                 if state.is_entering_highscore {
                     // Render initials entry screen
                     draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 230));
@@ -2644,6 +2679,169 @@ async fn main() {
                             }
                         }
                     }
+                } else if state.show_directives {
+                    // Render Civic Directive Manual / Get Educated overlay
+                    draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 245));
+                    
+                    let size_title = 12.0 * ui_scale;
+                    let size_body = 8.0 * ui_scale;
+                    let size_prompt = 9.0 * ui_scale;
+                    
+                    // We define the content for each stage
+                    let (header, lines): (&str, &[&str]) = match state.directives_stage {
+                        0 => (
+                            "1. THE LAW OF THE PATH",
+                            &[
+                                "The primary directive of Apex Prime is absolute:",
+                                "All citizens must walk on the RIGHT side",
+                                "of all sidewalks at all times.",
+                                "Order, safety, and productivity depend on it."
+                            ]
+                        ),
+                        1 => (
+                            "2. IDENTIFYING COMPLIANCE",
+                            &[
+                                "A 'Right Sider' is a law-abiding citizen",
+                                "who walks exclusively on the right.",
+                                "They keep our lanes clean and efficient.",
+                                "They are the backbone of Apex Prime."
+                            ]
+                        ),
+                        2 => (
+                            "3. ELIMINATING THE DEVIANTS",
+                            &[
+                                "Evil 'Left Siders' walk on the left.",
+                                "This causes chaos, stress, and civic decay.",
+                                "Contrary walking is a direct threat",
+                                "to societal harmony and order."
+                            ]
+                        ),
+                        _ => (
+                            "4. YOUR MANDATE",
+                            &[
+                                "As law enforcement unit KX-128#67,",
+                                "you are hereby commanded to enforce the law",
+                                "and neutralize all contrary walkers.",
+                                "No warnings. No exceptions.",
+                                "Enforce. Align. Cleanse."
+                            ]
+                        )
+                    };
+                    
+                    let directives_dt = get_frame_time().min(0.08);
+                    let chars_to_show = if state.directives_timer >= 0.3 {
+                        ((state.directives_timer - 0.3) * 150.0) as usize
+                    } else {
+                        0
+                    };
+                    let prev_chars = if (state.directives_timer - directives_dt) >= 0.3 {
+                        ((state.directives_timer - directives_dt - 0.3) * 150.0) as usize
+                    } else {
+                        0
+                    };
+                    let total_chars: usize = lines.iter().map(|l| l.len()).sum();
+                    if chars_to_show > prev_chars && chars_to_show <= total_chars {
+                        if chars_to_show % 3 == 0 {
+                            game::play_sound("scan_tick");
+                        }
+                    }
+
+                    // Calculate total block height to center it vertically
+                    // Title/header height + spacing + (lines * line_height)
+                    let line_h = 16.0 * ui_scale;
+                    let num_lines = lines.len();
+                    let block_h = size_title + 24.0 * ui_scale + (num_lines as f32) * line_h;
+                    
+                    let mut current_y = view_y + (view_h - block_h) / 2.0;
+                    
+                    // Flash in effect: start bright (white) and get normal (cyan) quickly in 300 ms
+                    let header_col = if state.directives_timer < 0.3 {
+                        let t = state.directives_timer / 0.3;
+                        let c_cyan = Color::from_rgba(0, 240, 255, 255);
+                        Color::new(
+                            1.0 + (c_cyan.r - 1.0) * t,
+                            1.0 + (c_cyan.g - 1.0) * t,
+                            1.0 + (c_cyan.b - 1.0) * t,
+                            1.0,
+                        )
+                    } else {
+                        Color::from_rgba(0, 240, 255, 255)
+                    };
+
+                    let line_col = if state.directives_timer < 0.3 {
+                        let t = state.directives_timer / 0.3;
+                        let c_line = Color::from_rgba(0, 240, 255, 120);
+                        Color::new(
+                            1.0 + (c_line.r - 1.0) * t,
+                            1.0 + (c_line.g - 1.0) * t,
+                            1.0 + (c_line.b - 1.0) * t,
+                            1.0 + (c_line.a - 1.0) * t,
+                        )
+                    } else {
+                        Color::from_rgba(0, 240, 255, 120)
+                    };
+
+                    let dim_header = measure_text(header, Some(&font), size_title as u16, 1.0);
+                    draw_pixel_text(header, view_x + (view_w - dim_header.width) / 2.0, current_y, size_title, header_col, &font);
+                    current_y += size_title + 10.0 * ui_scale;
+                    
+                    // Underline
+                    draw_rectangle(cx - 150.0 * ui_scale, current_y, 300.0 * ui_scale, 2.0 * ui_scale, line_col);
+                    current_y += 24.0 * ui_scale;
+                    
+                    // Draw body lines using typewriter slicing with stable centering
+                    let mut chars_remaining = chars_to_show;
+                    for line in lines.iter() {
+                        if chars_remaining == 0 {
+                            break;
+                        }
+                        let line_len = line.len();
+                        let show_len = chars_remaining.min(line_len);
+                        
+                        let text_col = if line.contains("commanded") || line.contains("neutralize") || line.contains("Cleanse") {
+                            Color::from_rgba(255, 0, 127, 255) // Pink warning highlighting
+                        } else {
+                            WHITE
+                        };
+                        // Center position is based on full line width to prevent jitter/shifting during typing
+                        let dim_full = measure_text(line, Some(&font), size_body as u16, 1.0);
+                        let line_start_x = view_x + (view_w - dim_full.width) / 2.0;
+                        
+                        // Draw characters one-by-one at stable absolute offsets based on final line
+                        for (i, ch) in line.chars().enumerate() {
+                            if i >= show_len {
+                                break;
+                            }
+                            let prefix: String = line.chars().take(i).collect();
+                            let sub_dim = measure_text(&prefix, Some(&font), size_body as u16, 1.0);
+                            let char_x = line_start_x + sub_dim.width;
+                            draw_pixel_text(&ch.to_string(), char_x, current_y, size_body, text_col, &font);
+                        }
+                        
+                        current_y += line_h;
+                        chars_remaining -= show_len;
+                    }
+                    
+                    // Blinking prompt
+                    let is_last = state.directives_stage == 3;
+                    let t_confirm = if is_last {
+                        if game::is_mobile() {
+                            "TAP TO RETURN TO MAIN MENU"
+                        } else {
+                            "PRESS 'R' OR CLICK TO EXIT MANUAL"
+                        }
+                    } else {
+                        if game::is_mobile() {
+                            "TAP TO CONTINUE"
+                        } else {
+                            "PRESS 'R' OR CLICK TO CONTINUE"
+                        }
+                    };
+                    let dim_confirm = measure_text(t_confirm, Some(&font), size_prompt as u16, 1.0);
+                    let pulse = (get_time() * 6.0).sin() * 0.25 + 0.75;
+                    let confirm_col = Color::from_rgba(57, 255, 20, (255.0 * pulse) as u8);
+                    
+                    draw_pixel_text(t_confirm, view_x + (view_w - dim_confirm.width) / 2.0, view_y + view_h * 0.88, size_prompt, confirm_col, &font);
                 } else if state.show_leaderboard {
                     // Render Top 10 rankings table
                     draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 240));
@@ -2655,9 +2853,10 @@ async fn main() {
                     
                     // Table configuration
                     let table_x = cx - 180.0 * ui_scale;
-                    let table_y = view_y + view_h * 0.08;
-                    let table_w = 360.0 * ui_scale;
                     let row_h = 14.5 * ui_scale;
+                    let total_height = 208.75 * ui_scale;
+                    let table_y = view_y + (view_h - total_height) / 2.0;
+                    let table_w = 360.0 * ui_scale;
                     
                     let elapsed = (get_time() - state.leaderboard_open_time) as f32;
 

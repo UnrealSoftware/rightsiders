@@ -1297,6 +1297,7 @@
         let mobileHighscoreSubmitted = false;
         let gameStarted = false;
         let toggleHelp = () => {};
+        let hideHelp = () => {};
         let toggleFullscreen = () => {};
 
         function isMobileDevice() {
@@ -1632,6 +1633,7 @@
             }
             
             bindModalClose("help-modal-overlay", "help-overlay", ["close-help-modal"], closeHelp);
+            hideHelp = closeHelp;
             
             window.addEventListener("keydown", (e) => {
                 if (enteringHighscore) return;
@@ -1904,6 +1906,9 @@
                 };
                 importObject.env.toggle_help_js = () => {
                     toggleHelp();
+                };
+                importObject.env.hide_help_js = () => {
+                    hideHelp();
                 };
                 importObject.env.toggle_fullscreen_js = () => {
                     toggleFullscreen();
