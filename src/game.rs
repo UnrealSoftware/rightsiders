@@ -834,10 +834,10 @@ impl GameState {
         let num_sprinkles = 45;
         for _ in 0..num_sprinkles {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 1.2 + rng_float(&mut self.rng_state) * 3.8; // High speed scatter
+            let speed_h = 2.0 + rng_float(&mut self.rng_state) * 4.5; // High speed scatter (faster)
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
-            let vz = 1.5 + rng_float(&mut self.rng_state) * 3.5;     // Higher vertical splash
+            let vz = 2.2 + rng_float(&mut self.rng_state) * 4.3;     // Higher vertical splash (faster)
             let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
             self.particles.push(Particle {
@@ -849,7 +849,7 @@ impl GameState {
                 vz,
                 p_type: ParticleType::BloodSprinkle,
                 bounces: 1 + (next_rng(&mut self.rng_state) % 3), // Bounces 1-3 times
-                lifetime: 1.0 + rng_float(&mut self.rng_state) * 1.5,
+                lifetime: 0.6 + rng_float(&mut self.rng_state) * 1.0, // Shorter lifetime for faster dissipation
                 first_impact: true,
             });
         }
@@ -858,10 +858,10 @@ impl GameState {
         let num_chunks = 20;
         for _ in 0..num_chunks {
             let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 0.8 + rng_float(&mut self.rng_state) * 2.8; // Far flung chunks
+            let speed_h = 1.5 + rng_float(&mut self.rng_state) * 3.5; // Far flung chunks (faster)
             let vx = theta.cos() * speed_h;
             let vy = theta.sin() * speed_h;
-            let vz = 2.5 + rng_float(&mut self.rng_state) * 4.5;     // Volcanic ejection upward
+            let vz = 3.5 + rng_float(&mut self.rng_state) * 5.5;     // Volcanic ejection upward (faster)
             let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
             self.particles.push(Particle {
@@ -873,7 +873,7 @@ impl GameState {
                 vz,
                 p_type: ParticleType::GoreDebris,
                 bounces: 4 + (next_rng(&mut self.rng_state) % 4), // Bounces 4-7 times
-                lifetime: 2.0 + rng_float(&mut self.rng_state) * 2.5,
+                lifetime: 1.2 + rng_float(&mut self.rng_state) * 1.8, // Shorter lifetime for faster dissipation
                 first_impact: true,
             });
         }
@@ -1107,7 +1107,26 @@ impl GameState {
                     crate::map::TileType::Wall(_) => true,
                     _ => false,
                 };
-                if !is_wall && (gx * 23 + gy * 37) % 11 == 0 {
+
+                // Check if any tile in a 1-tile radius is an AC wall (style 1)
+                let mut near_ac_wall = false;
+                if !is_wall {
+                    for w_dx in -1..=1 {
+                        for w_dy in -1..=1 {
+                            let nx = (gx as i32 + w_dx).rem_euclid(MAP_WIDTH as i32) as usize;
+                            let ny = (gy as i32 + w_dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+                            if let crate::map::TileType::Wall(1) = self.map.grid[nx][ny] {
+                                near_ac_wall = true;
+                                break;
+                            }
+                        }
+                        if near_ac_wall {
+                            break;
+                        }
+                    }
+                }
+
+                if !is_wall && !near_ac_wall && (gx * 23 + gy * 37) % 11 == 0 {
                     // Check if it's on the player's sidewalk
                     let player_tile = self.map.grid[self.player.tx][self.player.ty];
                     let is_player_sidewalk = match player_tile {
@@ -1164,7 +1183,7 @@ impl GameState {
         }
 
         // Update particles
-        let gravity = 8.5;
+        let gravity = 14.0; // Higher gravity for snappier/faster particle descent
         let map_w = MAP_WIDTH as f32;
         let map_h = MAP_HEIGHT as f32;
         
