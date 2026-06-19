@@ -553,6 +553,50 @@ impl Raycaster {
 
                 let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
 
+                // Detect reflective window key color (Neon Magenta: 0xFF00FFFF)
+                if pixel == 0xFF00FFFF {
+                    // Mirror ray direction based on wall alignment (side == 0 for X normal, 1 for Y normal)
+                    let ref_dir_x = if side == 0 { -ray_dir_x } else { ray_dir_x };
+                    let ref_dir_y = if side == 1 { -ray_dir_y } else { ray_dir_y };
+                    
+                    let angle = ref_dir_y.atan2(ref_dir_x); // -PI to PI
+                    let angle_norm = (angle + std::f32::consts::PI) / (2.0 * std::f32::consts::PI);
+                    
+                    // Identify individual window panes using sub-tile texture coordinates (spaced approx 16-18 pixels)
+                    let sub_x = tex_x / 16;
+                    let sub_y = tex_y / 16;
+                    
+                    // Generate a pseudo-random hash unique to this specific window pane on the map
+                    let win_hash = wx.wrapping_mul(73856093)
+                        ^ wy.wrapping_mul(19349663)
+                        ^ sub_x.wrapping_mul(83492791)
+                        ^ sub_y.wrapping_mul(43853923);
+                    
+                    let rx_offset = (win_hash as usize) % 256;
+                    let ry_offset = (win_hash >> 8) as usize % 12; // slight vertical shift (up to 12 pixels)
+                    
+                    // Reflection texture is 256x64
+                    let rx = ((angle_norm * 255.0) as usize + rx_offset) % 256;
+                    let ry = (tex_y + ry_offset) % 64;
+                    
+                    let ref_pixel = assets.reflection.pixels[ry * 256 + rx];
+                    
+                    let r_ref = (ref_pixel >> 24) & 0xff;
+                    let g_ref = (ref_pixel >> 16) & 0xff;
+                    let b_ref = (ref_pixel >> 8) & 0xff;
+                    
+                    // Blend: 70% reflection + 30% deep blue glass (0x0A1C47FF)
+                    let r_glass = 10u32;
+                    let g_glass = 28u32;
+                    let b_glass = 71u32;
+                    
+                    let r_blend = (r_ref * 70 + r_glass * 30) / 100;
+                    let g_blend = (g_ref * 70 + g_glass * 30) / 100;
+                    let b_blend = (b_ref * 70 + b_glass * 30) / 100;
+                    
+                    pixel = (r_blend << 24) | (g_blend << 16) | (b_blend << 8) | 0xff;
+                }
+
                 // Shade pixel color components (RGBA format using optimized integer math)
                 if intensity_int < 256 {
                     let r = (((pixel >> 24) & 0xff) * intensity_int) >> 8;

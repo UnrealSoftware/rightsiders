@@ -88,6 +88,8 @@ pub struct GameAssets {
     pub walls: Vec<SpriteTexture>,
     // Sprites (0: Citizen Walk A, 1: Citizen Walk B, 2: Rebel Walk A, 3: Rebel Walk B, 4: Explode A, 5: Explode B, 6: Dead)
     pub sprites: Vec<SpriteTexture>,
+    #[allow(dead_code)]
+    pub reflection: SpriteTexture,
 }
 
 
@@ -606,9 +608,11 @@ pub fn generate_assets() -> GameAssets {
     s24.draw_rect(20, 42, 2, 6, c_neon_yellow);
     sprites.push(s24);
 
+    let reflection = generate_reflection_texture();
     GameAssets {
         walls,
         sprites,
+        reflection,
     }
 }
 
@@ -642,10 +646,137 @@ pub async fn load_game_assets() -> GameAssets {
         sprites.push(extract_sprite(&sprites_img, grid_col * sprite_size, grid_row * sprite_size, sprite_size, sprite_size));
     }
 
+    let reflection = generate_reflection_texture();
     GameAssets {
         walls,
         sprites,
+        reflection,
     }
+}
+
+fn generate_reflection_texture() -> SpriteTexture {
+    let w = 256;
+    let h = 64;
+    // Dark sky gradient background: from dark purple at bottom to black at top
+    let mut tex = SpriteTexture::new(w, h, 0x05050aff);
+    
+    // Draw sky gradient and stars
+    for y in 0..h {
+        let pct = y as f32 / h as f32;
+        // Blend top (black/dark blue: 0x010206ff) to bottom (dark purple: 0x180924ff)
+        let r = (1.0 * (1.0 - pct) + 24.0 * pct) as u32;
+        let g = (2.0 * (1.0 - pct) + 9.0 * pct) as u32;
+        let b = (6.0 * (1.0 - pct) + 36.0 * pct) as u32;
+        let color = (r << 24) | (g << 16) | (b << 8) | 0xff;
+        for x in 0..w {
+            tex.set_pixel(x as i32, y as i32, color);
+        }
+    }
+
+    // Add bright neon magenta/purple horizon glow at the bottom of the sky (y: 20..64)
+    for y in 20..h {
+        let factor = (y - 20) as f32 / (h - 20) as f32;
+        for x in 0..w {
+            let base_color = tex.pixels[y * w + x];
+            let r_base = (base_color >> 24) & 0xff;
+            let g_base = (base_color >> 16) & 0xff;
+            let b_base = (base_color >> 8) & 0xff;
+            
+            let r_glow = 204u32;
+            let g_glow = 0u32;
+            let b_glow = 102u32;
+            
+            // Blend: blend up to 40% glow at the horizon
+            let r = (r_base as f32 * (1.0 - factor * 0.4) + r_glow as f32 * (factor * 0.4)) as u32;
+            let g = (g_base as f32 * (1.0 - factor * 0.4) + g_glow as f32 * (factor * 0.4)) as u32;
+            let b = (b_base as f32 * (1.0 - factor * 0.4) + b_glow as f32 * (factor * 0.4)) as u32;
+            
+            tex.set_pixel(x as i32, y as i32, (r << 24) | (g << 16) | (b << 8) | 0xff);
+        }
+    }
+
+    // Add stars in the upper half (y: 0..25) - increased to 80 stars
+    let mut seed = 12345u32;
+    let mut pseudo_random = || {
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        seed
+    };
+    for _ in 0..80 {
+        let sx = (pseudo_random() as usize) % w;
+        let sy = (pseudo_random() as usize) % 25;
+        // Make some stars bright cyan or white or pink
+        let star_color = match pseudo_random() % 4 {
+            0 => 0x00ffffff, // cyan star
+            1 => 0xff00ffff, // pink star
+            _ => 0xffffffff, // white star
+        };
+        tex.set_pixel(sx as i32, sy as i32, star_color);
+    }
+
+    // Distant city silhouette
+    // Draw vertical blocks of varying heights, widths, and cyberpunk colors
+    let building_count = 16;
+    let b_width = w / building_count;
+    for i in 0..building_count {
+        let b_h = 15 + (pseudo_random() as usize) % 20; // building height from bottom
+        let bx = i * b_width + (pseudo_random() as usize) % 5;
+        let bw = b_width - 2 + (pseudo_random() as usize) % 4;
+        let by = h - b_h;
+        
+        // Distant skyscraper base color (very dark gray-blue)
+        let b_color = match pseudo_random() % 3 {
+            0 => 0x0c0f18ff,
+            1 => 0x101524ff,
+            _ => 0x0a0c14ff,
+        };
+        tex.draw_rect(bx as i32, by as i32, bw as i32, b_h as i32, b_color);
+        
+        // Draw neon warning lights on top of skyscrapers
+        let top_color = if pseudo_random() % 2 == 0 { 0xff0055ff } else { 0x00ffccff };
+        tex.set_pixel(bx as i32 + (bw as i32 / 2), by as i32, top_color);
+
+        // Draw vertical neon lines on building edges (50% chance)
+        if pseudo_random() % 2 == 0 {
+            let edge_color = if pseudo_random() % 2 == 0 { 0x00f0ffff } else { 0xff00ffff };
+            tex.draw_rect(bx as i32, by as i32, 1, b_h as i32, edge_color);
+        }
+
+        // Draw occasional large glowing ads/billboards on buildings
+        if b_h > 25 && bw > 8 && pseudo_random() % 3 == 0 {
+            let ad_w = 6;
+            let ad_h = 8;
+            let ad_x = bx + (bw - ad_w) / 2;
+            let ad_y = by + 6;
+            let ad_color = match pseudo_random() % 3 {
+                0 => 0xff00ffff, // neon pink
+                1 => 0x39ff14ff, // neon green
+                _ => 0x00f0ffff, // neon cyan
+            };
+            tex.draw_rect(ad_x as i32, ad_y as i32, ad_w as i32, ad_h as i32, ad_color);
+            // White highlight inside
+            tex.draw_rect(ad_x as i32 + 2, ad_y as i32 + 2, 2, 4, 0xffffffff);
+        }
+
+        // Draw small glowing windows inside the buildings - increased to 33% density
+        let win_rows = b_h / 6;
+        let win_cols = bw / 5;
+        for r in 0..win_rows {
+            for c in 0..win_cols {
+                if pseudo_random() % 3 == 0 { // 33% illuminated windows
+                    let wx = bx + c * 5 + 2;
+                    let wy = by + r * 6 + 3;
+                    let w_color = match pseudo_random() % 3 {
+                        0 => 0x00f0ffff, // Glowing cyan window
+                        1 => 0xffd700ff, // Glowing yellow window
+                        _ => 0xff00ffff, // Glowing pink window
+                    };
+                    tex.draw_rect(wx as i32, wy as i32, 2, 2, w_color);
+                }
+            }
+        }
+    }
+
+    tex
 }
 
 #[allow(dead_code)]
