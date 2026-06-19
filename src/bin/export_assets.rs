@@ -13,10 +13,10 @@ fn main() {
     let wall_size = 64;
     let sprite_size = 64;
 
-    // 1. Export walls (4 walls, arranged in a 2x2 grid: 128x128 pixels)
+    // 1. Export walls (arranged in a grid depending on count)
     let num_walls = game_assets.walls.len();
-    let walls_cols = 2;
-    let walls_rows = 2;
+    let walls_cols = if num_walls <= 4 { 2 } else { 4 };
+    let walls_rows = if num_walls <= 4 { 2 } else { 4 };
     let walls_width = wall_size * walls_cols;
     let walls_height = wall_size * walls_rows;
     let mut walls_pixels = vec![0u8; walls_width * walls_height * 4];
@@ -48,7 +48,7 @@ fn main() {
         walls_height as u32,
         image::ColorType::Rgba8,
     ).expect("Failed to save walls.png");
-    println!("Saved {} walls in 2x2 grid to {:?}", num_walls, walls_path);
+    println!("Saved {} walls in {}x{} grid to {:?}", num_walls, walls_cols, walls_rows, walls_path);
 
     // 2. Export sprites (25 sprites, arranged in a 5x5 grid: 320x320 pixels)
     let num_sprites = game_assets.sprites.len();

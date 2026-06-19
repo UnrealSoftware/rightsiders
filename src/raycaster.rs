@@ -490,7 +490,10 @@ impl Raycaster {
                 if idx >= 32 { break; }
 
                 if tile_y == 0 {
-                    let frame = if num_walls >= 2 {
+                    let frame = if num_walls >= 8 {
+                        let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
+                        (hash as usize) % 8
+                    } else if num_walls >= 2 {
                         let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
                         (hash as usize) % 2
                     } else {
@@ -503,14 +506,25 @@ impl Raycaster {
                         ^ (tile_y as u32).wrapping_mul(83492791)
                         ^ 0xabcdef;
                     let choice = (hash as usize) % num_walls;
-                    if choice < 2 {
+                    let is_first_group = if num_walls >= 16 {
+                        choice < 8
+                    } else {
+                        choice < 2
+                    };
+                    if is_first_group {
                         column_frames[idx] = choice;
                     } else {
                         column_frames[idx] = choice;
                         has_transitioned = true;
                     }
                 } else {
-                    let frame = if num_walls > 2 {
+                    let frame = if num_walls >= 16 {
+                        let hash = (wx as u32).wrapping_mul(73856093)
+                            ^ (wy as u32).wrapping_mul(19349663)
+                            ^ (tile_y as u32).wrapping_mul(83492791)
+                            ^ 0xabcdef;
+                        8 + (hash as usize) % 8
+                    } else if num_walls > 2 {
                         let remaining = num_walls - 2;
                         let hash = (wx as u32).wrapping_mul(73856093)
                             ^ (wy as u32).wrapping_mul(19349663)

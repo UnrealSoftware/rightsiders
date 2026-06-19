@@ -626,9 +626,9 @@ pub async fn load_game_assets() -> GameAssets {
     let wall_size = 64;
     let sprite_size = 64;
 
-    // Extract walls (4 walls, arranged in a 2x2 grid)
-    let walls_cols = 2;
-    for i in 0..4 {
+    // Extract walls (16 walls, arranged in a 4x4 grid)
+    let walls_cols = 4;
+    for i in 0..16 {
         let grid_col = i % walls_cols;
         let grid_row = i / walls_cols;
         walls.push(extract_sprite(&walls_img, grid_col * wall_size, grid_row * wall_size, wall_size, wall_size));
