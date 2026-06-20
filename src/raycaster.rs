@@ -945,6 +945,38 @@ impl Raycaster {
                             continue;
                         }
 
+                        // Apply holographic scanline and organic flicker to neon signs (indices 18..=24)
+                        // only affecting bright/saturated colors (not the gray brackets/outlines)
+                        if sprite.texture_idx >= 18 && sprite.texture_idx <= 24 {
+                            let r = (pixel >> 24) & 0xff;
+                            let g = (pixel >> 16) & 0xff;
+                            let b = (pixel >> 8) & 0xff;
+                            let max_val = r.max(g).max(b);
+                            let min_val = r.min(g).min(b);
+                            if (max_val - min_val) > 30 {
+                                // Organic high-frequency flickering + occasional drops
+                                let noise = (((time * 97.43) as f32).sin() * 43758.54).fract().abs();
+                                let flicker = if noise > 0.96 {
+                                    0.25 + noise * 0.3
+                                } else if noise > 0.90 {
+                                    0.7 + noise * 0.15
+                                } else {
+                                    0.95 + noise * 0.05
+                                };
+
+                                // Drifting holographic scanlines (based on screen Y coordinate and time)
+                                let scanline_y = y as f32;
+                                let scanline = 0.65 + 0.35 * ((scanline_y * 0.8 + (time as f32 * 12.0)).sin());
+
+                                // Holographic translucency multiplier
+                                let holo_alpha = 0.82;
+
+                                // Combine into final alpha channel
+                                let final_alpha = ((255.0 * holo_alpha * flicker * scanline) as u32).clamp(0, 255);
+                                pixel = (pixel & 0xffffff00) | final_alpha;
+                            }
+                        }
+
                         // Apply scanner glow/tint effect if targeted
                         if sprite.is_targeted {
                             let scan_pos = (((time * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
@@ -1053,6 +1085,38 @@ impl Raycaster {
                             // Transparent chroma-key (Black pixels 0x00000000)
                             if (pixel & 0xff) == 0 {
                                 continue;
+                            }
+
+                            // Apply holographic scanline and organic flicker to neon signs (indices 18..=24)
+                            // only affecting bright/saturated colors (not the gray brackets/outlines)
+                            if sprite.texture_idx >= 18 && sprite.texture_idx <= 24 {
+                                let r = (pixel >> 24) & 0xff;
+                                let g = (pixel >> 16) & 0xff;
+                                let b = (pixel >> 8) & 0xff;
+                                let max_val = r.max(g).max(b);
+                                let min_val = r.min(g).min(b);
+                                if (max_val - min_val) > 30 {
+                                    // Organic high-frequency flickering + occasional drops
+                                    let noise = (((time * 97.43) as f32).sin() * 43758.54).fract().abs();
+                                    let flicker = if noise > 0.96 {
+                                        0.25 + noise * 0.3
+                                    } else if noise > 0.90 {
+                                        0.7 + noise * 0.15
+                                    } else {
+                                        0.95 + noise * 0.05
+                                    };
+
+                                    // Drifting holographic scanlines (based on screen Y coordinate and time)
+                                    let scanline_y = y as f32;
+                                    let scanline = 0.65 + 0.35 * ((scanline_y * 0.8 + (time as f32 * 12.0)).sin());
+
+                                    // Holographic translucency multiplier
+                                    let holo_alpha = 0.82;
+
+                                    // Combine into final alpha channel
+                                    let final_alpha = ((255.0 * holo_alpha * flicker * scanline) as u32).clamp(0, 255);
+                                    pixel = (pixel & 0xffffff00) | final_alpha;
+                                }
                             }
 
                             // Apply scanner glow/tint effect if targeted
