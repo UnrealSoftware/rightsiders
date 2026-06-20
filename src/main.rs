@@ -67,6 +67,32 @@ fn upload_texture(sprite: &SpriteTexture) -> Texture2D {
     texture
 }
 
+fn draw_cropped_sprite_2d(
+    texture: &Texture2D,
+    offset_x: i32,
+    offset_y: i32,
+    center_x: f32,
+    center_y: f32,
+    scale_factor: f32,
+    color: Color,
+) {
+    let dest_w = texture.width() * scale_factor;
+    let dest_h = texture.height() * scale_factor;
+    let x = center_x - 32.0 * scale_factor + offset_x as f32 * scale_factor;
+    let y = center_y - 32.0 * scale_factor + offset_y as f32 * scale_factor;
+
+    draw_texture_ex(
+        texture,
+        x,
+        y,
+        color,
+        DrawTextureParams {
+            dest_size: Some(vec2(dest_w, dest_h)),
+            ..Default::default()
+        },
+    );
+}
+
 // Project a 3D world coordinate (x, y, z) to 2D screen coordinates (with torus wrapping)
 fn project_3d(
     x: f32,
@@ -218,6 +244,10 @@ fn generate_crosshair_texture() -> Texture2D {
 async fn main() {
     // 1. Load assets from PNG files
     let assets_data = load_game_assets().await;
+    let mut gpu_sprites = Vec::new();
+    for sprite in &assets_data.sprites {
+        gpu_sprites.push(upload_texture(sprite));
+    }
     
     // (Weapon textures upload removed as weapon is hidden)
 
@@ -295,11 +325,11 @@ async fn main() {
         let btn_font_size = 7.5 * ui_scale;
         let play_text = "ENFORCE CIVIC DIRECTIVES";
         let highscore_text = "UNIT LEADERBOARD";
-        let level_text = "INSTRUCTIONS";
+        let instruction_text = "RIGHT WHAT?";
 
         let play_dim = measure_text(play_text, Some(&font), btn_font_size as u16, 1.0);
         let highscore_dim = measure_text(highscore_text, Some(&font), btn_font_size as u16, 1.0);
-        let level_dim = measure_text(level_text, Some(&font), btn_font_size as u16, 1.0);
+        let level_dim = measure_text(instruction_text, Some(&font), btn_font_size as u16, 1.0);
 
         let max_btn_w = play_dim.width.max(highscore_dim.width).max(level_dim.width) + 20.0 * ui_scale;
         let btn_h = 22.0 * ui_scale;
@@ -1895,7 +1925,7 @@ async fn main() {
                 draw_rectangle(l_bx, l_by, max_btn_w, btn_h, level_bg_col);
                 draw_pixel_rect_lines(l_bx, l_by, max_btn_w, btn_h, 2.0 * ui_scale, level_border_col);
                 draw_pixel_text(
-                    level_text,
+                    instruction_text,
                     cx - level_dim.width / 2.0 + lvl_shake_x,
                     l_by + btn_h / 2.0 + level_dim.height / 2.0 - 0.5 * ui_scale + lvl_shake_y,
                     btn_font_size,
@@ -2728,6 +2758,205 @@ async fn main() {
                 } else if state.show_directives {
                     // Render Civic Directive Manual / Get Educated overlay
                     draw_rectangle(view_x, view_y, view_w, view_h, Color::from_rgba(10, 11, 16, 245));
+
+                    // Draw animated holograms (Right Sider/Left Sider) in the background
+                    let time = get_time() as f32;
+                    let scale_factor = 4.5 * ui_scale;
+
+                    // Transition/Slide-in progress (first 1.0 second of stage)
+                    let slide_t = (state.directives_timer / 1.0).min(1.0);
+                    // Smooth step/ease out for slide-in
+                    let ease_t = 1.0 - (1.0 - slide_t) * (1.0 - slide_t);
+
+                    // Glitch/flicker variables
+                    let jitter_val = if (time * 45.0).sin() > 0.85 {
+                        (time * 90.0).cos() * 2.5 * ui_scale
+                    } else {
+                        0.0
+                    };
+                    let base_alpha = (slide_t * 0.40) * (0.85 + (time * 60.0).sin() * 0.15); // Fade in up to 40% opacity
+
+                    // Centering details
+                    let center_y = view_y + view_h / 2.0;
+
+                    // Rest positions
+                    let right_sider_rest_x = view_x + view_w / 2.0 + 130.0 * ui_scale;
+                    let left_sider_rest_x = view_x + view_w / 2.0 - 130.0 * ui_scale;
+
+                    // Bobbing animation to simulate walking
+                    let bob_y = (time * 8.0).sin() * 4.0 * ui_scale;
+
+                    if state.directives_stage == 1 || state.directives_stage == 3 {
+                        // Right Sider (Citizen) walks in from the right edge
+                        let start_x = view_x + view_w + 100.0 * ui_scale;
+                        let cx = start_x + (right_sider_rest_x - start_x) * ease_t + jitter_val;
+                        let cy = center_y + bob_y;
+                        
+                        let right_sider_color = Color::new(0.1, 0.9, 0.4, base_alpha); // Neon holographic green
+                        let frame_idx = 0; // Citizen front view
+                        
+                        // Draw sprite
+                        let texture = &gpu_sprites[frame_idx];
+                        let sprite_meta = &assets_data.sprites[frame_idx];
+                        draw_cropped_sprite_2d(
+                            texture,
+                            sprite_meta.offset_x,
+                            sprite_meta.offset_y,
+                            cx,
+                            cy,
+                            scale_factor,
+                            right_sider_color,
+                        );
+
+                        // Draw hologram scanlines (flashing green, shorter, 5x faster, brighter, random blink)
+                        let scan_y = (time * 250.0) % (64.0 * scale_factor);
+                        let sy = cy - 32.0 * scale_factor + scan_y;
+                        if sy > cy - 32.0 * scale_factor && sy < cy + 32.0 * scale_factor {
+                            let rand_val = ((time * 12.9898 + 78.233).sin() * 43758.5453).fract().abs();
+                            let scan_alpha = base_alpha * 1.5 * (0.3 + rand_val * 0.7);
+                            let scanline_color = Color::new(0.4, 1.0, 0.7, scan_alpha);
+                            let line_len = 35.0 * scale_factor;
+                            draw_rectangle(
+                                cx - line_len / 2.0,
+                                sy,
+                                line_len,
+                                1.5 * ui_scale,
+                                scanline_color,
+                            );
+                        }
+
+                        // Stage 3 Target Indicator for Compliant Citizen
+                        if state.directives_stage == 3 {
+                            // Draw bracket/targeting reticle on the Compliant
+                            let pulse_size = 1.0 + (time * 10.0).sin().abs() * 0.1;
+                            let b_size = 35.0 * scale_factor / 4.5 * pulse_size;
+                            let rx = cx;
+                            let ry = cy;
+                            let bracket_color = Color::new(0.1, 1.0, 0.4, base_alpha * 2.0); // Bright flashing green target
+
+                            // Draw corners of the reticle box
+                            let d = b_size * 0.5;
+                            let len = b_size * 0.25;
+                            let thick = 2.0 * ui_scale;
+
+                            // Top-left corner
+                            draw_rectangle(rx - d, ry - d, len, thick, bracket_color);
+                            draw_rectangle(rx - d, ry - d, thick, len, bracket_color);
+
+                            // Top-right corner
+                            draw_rectangle(rx + d - len, ry - d, len, thick, bracket_color);
+                            draw_rectangle(rx + d - thick, ry - d, thick, len, bracket_color);
+
+                            // Bottom-left corner
+                            draw_rectangle(rx - d, ry + d - thick, len, thick, bracket_color);
+                            draw_rectangle(rx - d, ry + d - len, thick, len, bracket_color);
+
+                            // Bottom-right corner
+                            draw_rectangle(rx + d - len, ry + d - thick, len, thick, bracket_color);
+                            draw_rectangle(rx + d - thick, ry + d - len, thick, len, bracket_color);
+
+                            // COMPLIANT blinking green text
+                            if (time * 8.0) as u32 % 2 == 0 {
+                                let label = "COMPLIANT";
+                                let size_label = 5.5 * ui_scale;
+                                let dim_label = measure_text(label, Some(&font), size_label as u16, 1.0);
+                                draw_pixel_text(
+                                    label,
+                                    rx - dim_label.width / 2.0,
+                                    ry - d - 10.0 * ui_scale,
+                                    size_label,
+                                    bracket_color,
+                                    &font,
+                                );
+                            }
+                        }
+                    }
+
+                    if state.directives_stage == 2 || state.directives_stage == 3 {
+                        // Left Sider (Rebel) walks in from the left edge
+                        let start_x = view_x - 100.0 * ui_scale;
+                        let cx = start_x + (left_sider_rest_x - start_x) * ease_t + jitter_val;
+                        let cy = center_y + bob_y;
+
+                        let left_sider_color = Color::new(1.0, 0.1, 0.4, base_alpha); // Neon holographic pink/red
+                        let frame_idx = 1; // Rebel front view
+
+                        // Draw sprite
+                        let texture = &gpu_sprites[frame_idx];
+                        let sprite_meta = &assets_data.sprites[frame_idx];
+                        draw_cropped_sprite_2d(
+                            texture,
+                            sprite_meta.offset_x,
+                            sprite_meta.offset_y,
+                            cx,
+                            cy,
+                            scale_factor,
+                            left_sider_color,
+                        );
+
+                        // Draw hologram scanlines (flashing red, shorter, 5x faster, brighter, random blink)
+                        let scan_y = (time * 250.0) % (64.0 * scale_factor);
+                        let sy = cy - 32.0 * scale_factor + scan_y;
+                        if sy > cy - 32.0 * scale_factor && sy < cy + 32.0 * scale_factor {
+                            let rand_val = ((time * 12.9898 + 78.233).sin() * 43758.5453).fract().abs();
+                            let scan_alpha = base_alpha * 1.5 * (0.3 + rand_val * 0.7);
+                            let scanline_color = Color::new(1.0, 0.4, 0.6, scan_alpha);
+                            let line_len = 35.0 * scale_factor;
+                            draw_rectangle(
+                                cx - line_len / 2.0,
+                                sy,
+                                line_len,
+                                1.5 * ui_scale,
+                                scanline_color,
+                            );
+                        }
+
+                        // Stage 3 Target Indicator
+                        if state.directives_stage == 3 {
+                            // Draw bracket/targeting reticle on the Deviant
+                            let pulse_size = 1.0 + (time * 10.0).sin().abs() * 0.1;
+                            let b_size = 35.0 * scale_factor / 4.5 * pulse_size;
+                            let rx = cx;
+                            let ry = cy;
+                            let bracket_color = Color::new(1.0, 0.0, 0.1, base_alpha * 2.0); // Bright flashing red target
+
+                            // Draw corners of the reticle box
+                            let d = b_size * 0.5;
+                            let len = b_size * 0.25;
+                            let thick = 2.0 * ui_scale;
+
+                            // Top-left corner
+                            draw_rectangle(rx - d, ry - d, len, thick, bracket_color);
+                            draw_rectangle(rx - d, ry - d, thick, len, bracket_color);
+
+                            // Top-right corner
+                            draw_rectangle(rx + d - len, ry - d, len, thick, bracket_color);
+                            draw_rectangle(rx + d - thick, ry - d, thick, len, bracket_color);
+
+                            // Bottom-left corner
+                            draw_rectangle(rx - d, ry + d - thick, len, thick, bracket_color);
+                            draw_rectangle(rx - d, ry + d - len, thick, len, bracket_color);
+
+                            // Bottom-right corner
+                            draw_rectangle(rx + d - len, ry + d - thick, len, thick, bracket_color);
+                            draw_rectangle(rx + d - thick, ry + d - len, thick, len, bracket_color);
+
+                            // TARGET ACQUIRED blinking red text
+                            if (time * 8.0) as u32 % 2 == 0 {
+                                let label = "DEVIANT LOCK-ON";
+                                let size_label = 5.5 * ui_scale;
+                                let dim_label = measure_text(label, Some(&font), size_label as u16, 1.0);
+                                draw_pixel_text(
+                                    label,
+                                    rx - dim_label.width / 2.0,
+                                    ry - d - 10.0 * ui_scale,
+                                    size_label,
+                                    bracket_color,
+                                    &font,
+                                );
+                            }
+                        }
+                    }
                     
                     let size_title = 12.0 * ui_scale;
                     let size_body = 8.0 * ui_scale;
@@ -2738,10 +2967,10 @@ async fn main() {
                         0 => (
                             "1. THE UNSPOKEN LAW",
                             &[
-                                "It should be obvious to everyone, but some ignore it:",
+                                "Obvious to everyone, ignored by many:",
                                 "All citizens must walk on the RIGHT side",
                                 "of all sidewalks at all times.",
-                                "Order, safety, and productivity depend on it."
+                                "Order, safety, and efficiency depend on it."
                             ]
                         ),
                         1 => (
@@ -2874,7 +3103,7 @@ async fn main() {
                         if game::is_mobile() {
                             "TAP TO RETURN TO MAIN MENU"
                         } else {
-                            "PRESS 'R' OR CLICK TO EXIT MANUAL"
+                            "PRESS 'R' OR CLICK TO EXIT"
                         }
                     } else {
                         if game::is_mobile() {
