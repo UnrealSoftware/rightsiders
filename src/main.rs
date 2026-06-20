@@ -1244,6 +1244,7 @@ async fn main() {
                 is_targeted,
                 target_color,
                 angle: 0.0,
+                flip_x: false,
             });
         }
 
@@ -1283,10 +1284,21 @@ async fn main() {
                         }
 
                         if let Some((ox, oy)) = side {
-                            // Compute neon sign sprite index (18, 19, 20)
-                            let tex_idx = 18 + ((gx * 7 + gy * 13) % 3);
+                            // Compute neon sign sprite index (18..=24)
+                            let tex_idx = 18 + ((gx * 7 + gy * 13) % 7);
                             let world_x = gx as f32 + ox;
                             let world_y = gy as f32 + oy;
+
+                            // Calculate vector from sign's center to wall's center
+                            let wall_dx = (gx as f32 + 0.5) - world_x;
+                            let wall_dy = (gy as f32 + 0.5) - world_y;
+
+                            // Project wall direction onto player's camera plane
+                            let dot = wall_dx * state.player.plane_x + wall_dy * state.player.plane_y;
+
+                            // If dot > 0, the wall is to the right side of the screen/camera,
+                            // which means the sign must be flipped horizontally (anchor on the right)
+                            let flip_x = dot > 0.0;
 
                             sprites_to_draw.push(SpriteToRender {
                                 x: world_x,
@@ -1296,6 +1308,7 @@ async fn main() {
                                 is_targeted: false,
                                 target_color: 0,
                                 angle: 0.0,
+                                flip_x,
                             });
                         }
                     }
@@ -1342,6 +1355,7 @@ async fn main() {
                 is_targeted: false,
                 target_color: 0,
                 angle: p.angle,
+                flip_x: false,
             });
         }
 
@@ -1355,6 +1369,7 @@ async fn main() {
                 is_targeted: false,
                 target_color: 0,
                 angle: 0.0,
+                flip_x: false,
             });
         }
 
@@ -1369,6 +1384,7 @@ async fn main() {
                 is_targeted: false,
                 target_color: 0,
                 angle: 0.0,
+                flip_x: false,
             });
         }
 

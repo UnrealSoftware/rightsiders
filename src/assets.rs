@@ -615,6 +615,10 @@ pub fn generate_assets() -> GameAssets {
     sprites.push(s24);
 
     let reflection = generate_reflection_texture();
+    // Push 4 dummy sprites to match the WASM sprite count (total 25)
+    for _ in 0..4 {
+        sprites.push(SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black));
+    }
     GameAssets {
         walls,
         sprites,
@@ -644,9 +648,9 @@ pub async fn load_game_assets() -> GameAssets {
         walls.push(extract_sprite(&walls_img, grid_col * wall_size, grid_row * wall_size, wall_size, wall_size));
     }
 
-    // Extract sprites (21 sprites, arranged in a 5x5 grid) - cropped automatically
+    // Extract sprites (25 sprites, arranged in a 5x5 grid) - cropped automatically
     let sprites_cols = 5;
-    for i in 0..21 {
+    for i in 0..25 {
         let grid_col = i % sprites_cols;
         let grid_row = i / sprites_cols;
         sprites.push(extract_cropped_sprite(&sprites_img, grid_col * sprite_size, grid_row * sprite_size, sprite_size, sprite_size));

@@ -42,6 +42,7 @@ pub struct SpriteToRender {
     pub is_targeted: bool,
     pub target_color: u32,
     pub angle: f32, // Rotation angle in radians
+    pub flip_x: bool,
 }
 
 impl Raycaster {
@@ -873,7 +874,7 @@ impl Raycaster {
                 15 => 0.25, // Steam small
                 16 => 0.45, // Steam medium
                 17 => 0.65, // Steam large
-                18 | 19 | 20 => 0.70, // Neon signs
+                18..=24 => 0.70, // Neon signs
                 _ => 0.60,  // Citizens
             };
 
@@ -901,13 +902,19 @@ impl Raycaster {
 
             if sprite.angle == 0.0 {
                 // Compute screen bounding box based on tight crop offsets
+                let offset_x = if sprite.flip_x {
+                    64 - (texture.offset_x + texture.width as i32)
+                } else {
+                    texture.offset_x
+                };
+
                 let draw_start_y_unclamped = (orig_center_y - orig_sprite_height / 2)
                     + (texture.offset_y as f32 * orig_sprite_height as f32 / 64.0) as i32;
                 let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
                 let draw_end_y = (draw_start_y_unclamped + sprite_height).clamp(0, HEIGHT as i32 - 1);
 
                 let draw_start_x_unclamped = (sprite_screen_x - orig_sprite_width / 2)
-                    + (texture.offset_x as f32 * orig_sprite_width as f32 / 64.0) as i32;
+                    + (offset_x as f32 * orig_sprite_width as f32 / 64.0) as i32;
                 let draw_start_x = draw_start_x_unclamped.clamp(0, WIDTH as i32 - 1);
                 let draw_end_x = (draw_start_x_unclamped + sprite_width).clamp(0, WIDTH as i32 - 1);
 
@@ -920,8 +927,11 @@ impl Raycaster {
                         continue;
                     }
 
-                    let tex_x = (((stripe - draw_start_x_unclamped) * tex_w as i32 / sprite_width) as usize)
+                    let mut tex_x = (((stripe - draw_start_x_unclamped) * tex_w as i32 / sprite_width) as usize)
                         .min(tex_w - 1);
+                    if sprite.flip_x {
+                        tex_x = tex_w - 1 - tex_x;
+                    }
 
                     let mut tex_y_fp = (draw_start_y - draw_start_y_unclamped) as f32 * step_y;
 
@@ -996,7 +1006,10 @@ impl Raycaster {
                 let sin_t = sprite.angle.sin();
 
                 // Center of the cropped pixels in 64x64 texture coordinates
-                let pixel_cx = texture.offset_x as f32 + tex_w as f32 / 2.0;
+                let mut pixel_cx = texture.offset_x as f32 + tex_w as f32 / 2.0;
+                if sprite.flip_x {
+                    pixel_cx = 64.0 - pixel_cx;
+                }
                 let pixel_cy = texture.offset_y as f32 + tex_h as f32 / 2.0;
 
                 // Center of the cropped pixels on screen
@@ -1030,7 +1043,8 @@ impl Raycaster {
                         let orig_y = (ty * 64.0 + pixel_cy) as i32;
 
                         // Check if the rotated pixel lies inside the cropped bounds
-                        let tex_x = orig_x - texture.offset_x;
+                        let check_x = if sprite.flip_x { 63 - orig_x } else { orig_x };
+                        let tex_x = check_x - texture.offset_x;
                         let tex_y = orig_y - texture.offset_y;
 
                         if tex_x >= 0 && tex_x < tex_w as i32 && tex_y >= 0 && tex_y < tex_h as i32 {
