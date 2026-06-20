@@ -1104,6 +1104,7 @@ async fn main() {
                 texture_idx: tex_idx,
                 is_targeted,
                 target_color,
+                angle: 0.0,
             });
         }
 
@@ -1155,6 +1156,7 @@ async fn main() {
                                 texture_idx: tex_idx,
                                 is_targeted: false,
                                 target_color: 0,
+                                angle: 0.0,
                             });
                         }
                     }
@@ -1165,8 +1167,8 @@ async fn main() {
         // Push particles to sprite list
         for p in &state.particles {
             let tex_idx = match p.p_type {
-                crate::game::ParticleType::BloodSprinkle => 7,
-                crate::game::ParticleType::GoreDebris => 8,
+                crate::game::ParticleType::BloodSprinkle => p.tex_idx,
+                crate::game::ParticleType::GoreDebris => p.tex_idx,
                 crate::game::ParticleType::Smoke => {
                     if p.lifetime > 0.6 {
                         10 // Hot yellow/white fire
@@ -1187,13 +1189,20 @@ async fn main() {
                 }
             };
             
+            let render_z = if p.tex_idx == 4 {
+                p.z - 0.0234375
+            } else {
+                p.z
+            };
+
             sprites_to_draw.push(SpriteToRender {
                 x: p.x,
                 y: p.y,
-                z: p.z,
+                z: render_z,
                 texture_idx: tex_idx,
                 is_targeted: false,
                 target_color: 0,
+                angle: p.angle,
             });
         }
 
@@ -1206,6 +1215,7 @@ async fn main() {
                 texture_idx: 9, // s9 Guided Missile sprite
                 is_targeted: false,
                 target_color: 0,
+                angle: 0.0,
             });
         }
 
@@ -1219,6 +1229,7 @@ async fn main() {
                 texture_idx: vehicle.sprite_idx,
                 is_targeted: false,
                 target_color: 0,
+                angle: 0.0,
             });
         }
 

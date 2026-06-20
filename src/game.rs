@@ -228,6 +228,9 @@ pub struct Particle {
     pub bounces: u32,
     pub lifetime: f32,
     pub first_impact: bool,
+    pub tex_idx: usize,
+    pub angle: f32,
+    pub spin_speed: f32,
 }
 
 pub struct Vehicle {
@@ -864,6 +867,9 @@ impl GameState {
                 bounces: 1 + (next_rng(&mut self.rng_state) % 3), // Bounces 1-3 times
                 lifetime: 0.6 + rng_float(&mut self.rng_state) * 1.0, // Shorter lifetime for faster dissipation
                 first_impact: true,
+                tex_idx: 7, // frame 8 (index 7)
+                angle: 0.0,
+                spin_speed: 0.0,
             });
         }
 
@@ -883,6 +889,21 @@ impl GameState {
             };
             let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
+            let tex_idx = if next_rng(&mut self.rng_state) % 100 < 20 {
+                4 // 20% chance of frame 5 (index 4)
+            } else {
+                8 // 80% chance of frame 9 (index 8)
+            };
+
+            let (angle, spin_speed) = if tex_idx == 4 {
+                let start_angle = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
+                let speed = 6.0 + rng_float(&mut self.rng_state) * 12.0;
+                let dir = if next_rng(&mut self.rng_state) % 2 == 0 { 1.0 } else { -1.0 };
+                (start_angle, speed * dir)
+            } else {
+                (0.0, 0.0)
+            };
+
             self.particles.push(Particle {
                 x,
                 y,
@@ -894,6 +915,9 @@ impl GameState {
                 bounces: 4 + (next_rng(&mut self.rng_state) % 4), // Bounces 4-7 times
                 lifetime: 1.2 + rng_float(&mut self.rng_state) * 1.8, // Shorter lifetime for faster dissipation
                 first_impact: true,
+                tex_idx,
+                angle,
+                spin_speed,
             });
         }
     }
@@ -1195,6 +1219,9 @@ impl GameState {
                             bounces: 0,
                             lifetime: 1.5 + rng_float(&mut self.rng_state) * 1.0,
                             first_impact: false,
+                            tex_idx: 0,
+                            angle: 0.0,
+                            spin_speed: 0.0,
                         });
                     }
                 }
@@ -1209,9 +1236,11 @@ impl GameState {
         let mut new_decals = Vec::new();
 
         self.particles.retain_mut(|p| {
-            p.lifetime -= dt;
-            if p.lifetime <= 0.0 {
-                return false;
+            if p.tex_idx != 4 {
+                p.lifetime -= dt;
+                if p.lifetime <= 0.0 {
+                    return false;
+                }
             }
 
             // Immediately destroy particles behind the player to optimize performance
@@ -1282,9 +1311,15 @@ impl GameState {
             p.y = next_y;
             p.z += p.vz * dt;
 
+            // Apply spin while flying/moving
+            if p.tex_idx == 4 {
+                p.angle += p.spin_speed * dt;
+            }
+
             // Floor collision
-            if p.z <= 0.0 {
-                p.z = 0.0;
+            let coll_z = if p.tex_idx == 4 { 0.01953125 } else { 0.0 };
+            if p.z <= coll_z {
+                p.z = coll_z;
                 
                 // Spawn a blood decal on floor contact with reduced probability
                 let is_sprinkle = p.p_type == ParticleType::BloodSprinkle;
@@ -1330,6 +1365,16 @@ impl GameState {
                     p.vz = 0.0;
                     p.vx = 0.0;
                     p.vy = 0.0;
+
+                    if p.tex_idx == 4 {
+                        p.spin_speed = 0.0;
+                        let norm_angle = p.angle.rem_euclid(2.0 * std::f32::consts::PI);
+                        if norm_angle >= std::f32::consts::PI * 0.5 && norm_angle < std::f32::consts::PI * 1.5 {
+                            p.angle = std::f32::consts::PI;
+                        } else {
+                            p.angle = 0.0;
+                        }
+                    }
                 }
             }
 
@@ -1443,6 +1488,9 @@ impl GameState {
                     bounces: 0,
                     lifetime: 0.8,
                     first_impact: false,
+                    tex_idx: 0,
+                    angle: 0.0,
+                    spin_speed: 0.0,
                 });
 
                 // Check arrival (either time-based or close proximity to live target)

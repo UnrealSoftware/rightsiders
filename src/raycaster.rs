@@ -25,6 +25,7 @@ pub struct SpriteToRender {
     pub texture_idx: usize, // Index in assets.sprites
     pub is_targeted: bool,
     pub target_color: u32,
+    pub angle: f32, // Rotation angle in radians
 }
 
 impl Raycaster {
@@ -714,7 +715,7 @@ impl Raycaster {
             let full_height = (HEIGHT as f32 / transform_y).abs() as i32;
             let scale = match sprite.texture_idx {
                 7 => 0.15, // Blood sprinkle
-                8 => 0.25, // Meat chunk
+                4 | 8 => 0.25, // Meat chunk
                 9 => 0.22, // Guided missile glowing sphere
                 10 | 11 | 12 => 0.35, // Smoke trail particles
                 15 => 0.25, // Steam small
@@ -743,93 +744,206 @@ impl Raycaster {
             let orig_draw_end_y = (HEIGHT as i32 / 2).saturating_add(((pos_z - sprite.z) * full_height as f32) as i32);
             let orig_center_y = orig_draw_end_y - orig_sprite_height / 2;
 
-            let draw_start_y_unclamped = orig_center_y - sprite_height / 2;
-            let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
-            let draw_end_y = (orig_center_y + sprite_height / 2).clamp(0, HEIGHT as i32 - 1);
-
-            let draw_start_x = (sprite_screen_x - sprite_width / 2).clamp(0, WIDTH as i32 - 1);
-            let draw_end_x = (sprite_screen_x + sprite_width / 2).clamp(0, WIDTH as i32 - 1);
-
             let fog = (1.0 - (transform_y / VISIBILITY_DIST)).clamp(0.0, 1.0);
             let fog_int = (fog * 256.0) as u32;
 
-            let step_y = (tex_h as f32) / (sprite_height as f32);
+            if sprite.angle == 0.0 {
+                // Compute screen bounding box based on tight crop offsets
+                let draw_start_y_unclamped = (orig_center_y - orig_sprite_height / 2)
+                    + (texture.offset_y as f32 * orig_sprite_height as f32 / 64.0) as i32;
+                let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
+                let draw_end_y = (draw_start_y_unclamped + sprite_height).clamp(0, HEIGHT as i32 - 1);
 
-            // Draw the sprite column by column
-            for stripe in draw_start_x..draw_end_x {
-                // Check Z-Buffer: sprite is blocked by walls
-                if transform_y >= self.z_buffer[stripe as usize] {
-                    continue;
-                }
+                let draw_start_x_unclamped = (sprite_screen_x - orig_sprite_width / 2)
+                    + (texture.offset_x as f32 * orig_sprite_width as f32 / 64.0) as i32;
+                let draw_start_x = draw_start_x_unclamped.clamp(0, WIDTH as i32 - 1);
+                let draw_end_x = (draw_start_x_unclamped + sprite_width).clamp(0, WIDTH as i32 - 1);
 
-                let tex_x = (((stripe - (sprite_screen_x - sprite_width / 2)) * tex_w as i32 / sprite_width) as usize)
-                    .min(tex_w - 1);
+                let step_y = (tex_h as f32) / (sprite_height as f32);
 
-                let mut tex_y_fp = (draw_start_y - draw_start_y_unclamped) as f32 * step_y;
-
-                for y in draw_start_y..draw_end_y {
-                    let tex_y = (tex_y_fp as usize).min(tex_h - 1);
-                    let mut pixel = texture.pixels[tex_y * tex_w + tex_x];
-                    tex_y_fp += step_y;
-
-                    // Transparent chroma-key (Black pixels 0x00000000)
-                    if (pixel & 0xff) == 0 {
+                // Draw the sprite column by column (optimized vertical-strip caster)
+                for stripe in draw_start_x..draw_end_x {
+                    // Check Z-Buffer: sprite is blocked by walls
+                    if transform_y >= self.z_buffer[stripe as usize] {
                         continue;
                     }
 
-                    // Apply scanner glow/tint effect if targeted
-                    if sprite.is_targeted {
-                        let scan_pos = (((time * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
-                        let dy = y - draw_start_y_unclamped;
-                        if (dy - scan_pos).abs() < 2 {
-                            pixel = sprite.target_color;
-                        } else {
-                            let orig_r = (pixel >> 24) & 0xff;
-                            let orig_g = (pixel >> 16) & 0xff;
-                            let orig_b = (pixel >> 8) & 0xff;
-                            let target_r = (sprite.target_color >> 24) & 0xff;
-                            let target_g = (sprite.target_color >> 16) & 0xff;
-                            let target_b = (sprite.target_color >> 8) & 0xff;
+                    let tex_x = (((stripe - draw_start_x_unclamped) * tex_w as i32 / sprite_width) as usize)
+                        .min(tex_w - 1);
 
-                            let r = (orig_r * 180 + target_r * 76) >> 8;
-                            let g = (orig_g * 180 + target_g * 76) >> 8;
-                            let b = (orig_b * 180 + target_b * 76) >> 8;
+                    let mut tex_y_fp = (draw_start_y - draw_start_y_unclamped) as f32 * step_y;
+
+                    for y in draw_start_y..draw_end_y {
+                        let tex_y = (tex_y_fp as usize).min(tex_h - 1);
+                        let mut pixel = texture.pixels[tex_y * tex_w + tex_x];
+                        tex_y_fp += step_y;
+
+                        // Transparent chroma-key (Black pixels 0x00000000)
+                        if (pixel & 0xff) == 0 {
+                            continue;
+                        }
+
+                        // Apply scanner glow/tint effect if targeted
+                        if sprite.is_targeted {
+                            let scan_pos = (((time * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
+                            let dy = y - draw_start_y_unclamped;
+                            if (dy - scan_pos).abs() < 2 {
+                                pixel = sprite.target_color;
+                            } else {
+                                let orig_r = (pixel >> 24) & 0xff;
+                                let orig_g = (pixel >> 16) & 0xff;
+                                let orig_b = (pixel >> 8) & 0xff;
+                                let target_r = (sprite.target_color >> 24) & 0xff;
+                                let target_g = (sprite.target_color >> 16) & 0xff;
+                                let target_b = (sprite.target_color >> 8) & 0xff;
+
+                                let r = (orig_r * 180 + target_r * 76) >> 8;
+                                let g = (orig_g * 180 + target_g * 76) >> 8;
+                                let b = (orig_b * 180 + target_b * 76) >> 8;
+                                pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
+                            }
+                        }
+
+                        // Apply distance fog to sprite pixel (using optimized integer math)
+                        if fog_int < 256 {
+                            let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
+                            let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
+                            let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;
+                            pixel = (r << 24) | (g << 16) | (b << 8) | (pixel & 0xff); // Keep alpha
+                        }
+
+                        // CPU-side alpha blending if pixel is translucent (alpha < 255)
+                        let alpha = pixel & 0xff;
+                        if alpha < 255 {
+                            let dest_idx = (y as usize) * WIDTH + (stripe as usize);
+                            let dest_pixel = self.pixels[dest_idx];
+                            let dest_r = (dest_pixel >> 24) & 0xff;
+                            let dest_g = (dest_pixel >> 16) & 0xff;
+                            let dest_b = (dest_pixel >> 8) & 0xff;
+
+                            let src_r = (pixel >> 24) & 0xff;
+                            let src_g = (pixel >> 16) & 0xff;
+                            let src_b = (pixel >> 8) & 0xff;
+
+                            let r_val = src_r * alpha + dest_r * (255 - alpha);
+                            let g_val = src_g * alpha + dest_g * (255 - alpha);
+                            let b_val = src_b * alpha + dest_b * (255 - alpha);
+
+                            let r = (r_val + 1 + (r_val >> 8)) >> 8;
+                            let g = (g_val + 1 + (g_val >> 8)) >> 8;
+                            let b = (b_val + 1 + (b_val >> 8)) >> 8;
                             pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
                         }
+
+                        self.pixels[(y as usize) * WIDTH + (stripe as usize)] = pixel;
+                    }
+                }
+            } else {
+                // Rotated caster path
+                let cos_t = sprite.angle.cos();
+                let sin_t = sprite.angle.sin();
+
+                // Center of the cropped pixels in 64x64 texture coordinates
+                let pixel_cx = texture.offset_x as f32 + tex_w as f32 / 2.0;
+                let pixel_cy = texture.offset_y as f32 + tex_h as f32 / 2.0;
+
+                // Center of the cropped pixels on screen
+                let screen_cx = sprite_screen_x - orig_sprite_width / 2 + (pixel_cx * orig_sprite_width as f32 / 64.0) as i32;
+                let screen_cy = orig_center_y - orig_sprite_height / 2 + (pixel_cy * orig_sprite_height as f32 / 64.0) as i32;
+
+                // Draw bounding box of the uncropped 64x64 space to cover the whole rotated range
+                let draw_start_x = (sprite_screen_x - orig_sprite_width / 2).clamp(0, WIDTH as i32 - 1);
+                let draw_end_x = (sprite_screen_x + orig_sprite_width / 2).clamp(0, WIDTH as i32 - 1);
+                let draw_start_y = (orig_center_y - orig_sprite_height / 2).clamp(0, HEIGHT as i32 - 1);
+                let draw_end_y = (orig_center_y + orig_sprite_height / 2).clamp(0, HEIGHT as i32 - 1);
+
+                for stripe in draw_start_x..draw_end_x {
+                    // Check Z-Buffer: sprite is blocked by walls
+                    if transform_y >= self.z_buffer[stripe as usize] {
+                        continue;
                     }
 
-                    // Apply distance fog to sprite pixel (using optimized integer math)
-                    if fog_int < 256 {
-                        let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
-                        let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
-                        let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;
-                        pixel = (r << 24) | (g << 16) | (b << 8) | (pixel & 0xff); // Keep alpha
+                    // Compute rotated distance from screen center (screen_cx, screen_cy) in scaled units
+                    let u = (stripe - screen_cx) as f32 / orig_sprite_width as f32;
+
+                    for y in draw_start_y..draw_end_y {
+                        let v = (y - screen_cy) as f32 / orig_sprite_height as f32;
+
+                        // Rotate coordinates around screen center (which maps to pixel_cx, pixel_cy)
+                        let tx = u * cos_t - v * sin_t;
+                        let ty = u * sin_t + v * cos_t;
+
+                        // Convert rotated coordinate back to original 64x64 space relative to pixel_cx, pixel_cy
+                        let orig_x = (tx * 64.0 + pixel_cx) as i32;
+                        let orig_y = (ty * 64.0 + pixel_cy) as i32;
+
+                        // Check if the rotated pixel lies inside the cropped bounds
+                        let tex_x = orig_x - texture.offset_x;
+                        let tex_y = orig_y - texture.offset_y;
+
+                        if tex_x >= 0 && tex_x < tex_w as i32 && tex_y >= 0 && tex_y < tex_h as i32 {
+                            let mut pixel = texture.pixels[tex_y as usize * tex_w + tex_x as usize];
+
+                            // Transparent chroma-key (Black pixels 0x00000000)
+                            if (pixel & 0xff) == 0 {
+                                continue;
+                            }
+
+                            // Apply scanner glow/tint effect if targeted
+                            if sprite.is_targeted {
+                                let scan_pos = (((time * 3.0).sin() * 0.5 + 0.5) * sprite_height as f64) as i32;
+                                let dy = y - (orig_center_y - sprite_height / 2);
+                                if (dy - scan_pos).abs() < 2 {
+                                    pixel = sprite.target_color;
+                                } else {
+                                    let orig_r = (pixel >> 24) & 0xff;
+                                    let orig_g = (pixel >> 16) & 0xff;
+                                    let orig_b = (pixel >> 8) & 0xff;
+                                    let target_r = (sprite.target_color >> 24) & 0xff;
+                                    let target_g = (sprite.target_color >> 16) & 0xff;
+                                    let target_b = (sprite.target_color >> 8) & 0xff;
+
+                                    let r = (orig_r * 180 + target_r * 76) >> 8;
+                                    let g = (orig_g * 180 + target_g * 76) >> 8;
+                                    let b = (orig_b * 180 + target_b * 76) >> 8;
+                                    pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
+                                }
+                            }
+
+                            // Apply distance fog to sprite pixel (using optimized integer math)
+                            if fog_int < 256 {
+                                let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
+                                let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
+                                let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;
+                                pixel = (r << 24) | (g << 16) | (b << 8) | (pixel & 0xff); // Keep alpha
+                            }
+
+                            // CPU-side alpha blending if pixel is translucent (alpha < 255)
+                            let alpha = pixel & 0xff;
+                            if alpha < 255 {
+                                let dest_idx = (y as usize) * WIDTH + (stripe as usize);
+                                let dest_pixel = self.pixels[dest_idx];
+                                let dest_r = (dest_pixel >> 24) & 0xff;
+                                let dest_g = (dest_pixel >> 16) & 0xff;
+                                let dest_b = (dest_pixel >> 8) & 0xff;
+
+                                let src_r = (pixel >> 24) & 0xff;
+                                let src_g = (pixel >> 16) & 0xff;
+                                let src_b = (pixel >> 8) & 0xff;
+
+                                let r_val = src_r * alpha + dest_r * (255 - alpha);
+                                let g_val = src_g * alpha + dest_g * (255 - alpha);
+                                let b_val = src_b * alpha + dest_b * (255 - alpha);
+
+                                let r = (r_val + 1 + (r_val >> 8)) >> 8;
+                                let g = (g_val + 1 + (g_val >> 8)) >> 8;
+                                let b = (b_val + 1 + (b_val >> 8)) >> 8;
+                                pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
+                            }
+
+                            self.pixels[(y as usize) * WIDTH + (stripe as usize)] = pixel;
+                        }
                     }
-
-                    // CPU-side alpha blending if pixel is translucent (alpha < 255)
-                    let alpha = pixel & 0xff;
-                    if alpha < 255 {
-                        let dest_idx = (y as usize) * WIDTH + (stripe as usize);
-                        let dest_pixel = self.pixels[dest_idx];
-                        let dest_r = (dest_pixel >> 24) & 0xff;
-                        let dest_g = (dest_pixel >> 16) & 0xff;
-                        let dest_b = (dest_pixel >> 8) & 0xff;
-
-                        let src_r = (pixel >> 24) & 0xff;
-                        let src_g = (pixel >> 16) & 0xff;
-                        let src_b = (pixel >> 8) & 0xff;
-
-                        let r_val = src_r * alpha + dest_r * (255 - alpha);
-                        let g_val = src_g * alpha + dest_g * (255 - alpha);
-                        let b_val = src_b * alpha + dest_b * (255 - alpha);
-
-                        let r = (r_val + 1 + (r_val >> 8)) >> 8;
-                        let g = (g_val + 1 + (g_val >> 8)) >> 8;
-                        let b = (b_val + 1 + (b_val >> 8)) >> 8;
-                        pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
-                    }
-
-                    self.pixels[(y as usize) * WIDTH + (stripe as usize)] = pixel;
                 }
             }
         }

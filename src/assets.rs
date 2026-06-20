@@ -7,6 +7,10 @@ pub struct SpriteTexture {
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u32>, // RGBA format: 0xRRGGBBAA
+    #[allow(dead_code)]
+    pub offset_x: i32,
+    #[allow(dead_code)]
+    pub offset_y: i32,
 }
 
 #[allow(dead_code)]
@@ -16,6 +20,8 @@ impl SpriteTexture {
             width,
             height,
             pixels: vec![default_color; width * height],
+            offset_x: 0,
+            offset_y: 0,
         }
     }
 
@@ -798,6 +804,8 @@ fn extract_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize, sw: usi
         width: sw,
         height: sh,
         pixels,
+        offset_x: 0,
+        offset_y: 0,
     }
 }
 
@@ -818,11 +826,11 @@ fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize,
         }
     }
 
-    // Find bounding box relative to center (sw / 2, sh / 2)
-    let cx = (sw / 2) as i32;
-    let cy = (sh / 2) as i32;
-    let mut max_dx = 0;
-    let mut max_dy = 0;
+    // Find tight bounding box of visible pixels (alpha > 0)
+    let mut min_x = sw;
+    let mut max_x = 0;
+    let mut min_y = sh;
+    let mut max_y = 0;
     let mut has_visible = false;
 
     for y in 0..sh {
@@ -831,10 +839,10 @@ fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize,
             let alpha = pixel & 0xff;
             if alpha > 0 {
                 has_visible = true;
-                let dx = (x as i32 - cx).abs();
-                let dy = (y as i32 - cy).abs();
-                if dx > max_dx { max_dx = dx; }
-                if dy > max_dy { max_dy = dy; }
+                if x < min_x { min_x = x; }
+                if x > max_x { max_x = x; }
+                if y < min_y { min_y = y; }
+                if y > max_y { max_y = y; }
             }
         }
     }
@@ -844,14 +852,10 @@ fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize,
             width: 1,
             height: 1,
             pixels: vec![0],
+            offset_x: 0,
+            offset_y: 0,
         };
     }
-
-    // Symmetric crop around the center
-    let min_x = (cx - max_dx).max(0) as usize;
-    let max_x = (cx + max_dx).min(sw as i32 - 1) as usize;
-    let min_y = (cy - max_dy).max(0) as usize;
-    let max_y = (cy + max_dy).min(sh as i32 - 1) as usize;
 
     let cropped_w = max_x - min_x + 1;
     let cropped_h = max_y - min_y + 1;
@@ -867,6 +871,8 @@ fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize,
         width: cropped_w,
         height: cropped_h,
         pixels: cropped_pixels,
+        offset_x: min_x as i32,
+        offset_y: min_y as i32,
     }
 }
 
