@@ -871,6 +871,10 @@ impl GameState {
             let transform_x = inv_det * (self.player.dir_y * dx - self.player.dir_x * dy);
             let transform_y = inv_det * (-self.player.plane_y * dx + self.player.plane_x * dy);
             if transform_y > 0.01 {
+                // Subtle fast screen shake and wet splat sound when blood hits player visor
+                self.screen_shake = (self.screen_shake + 0.15).min(0.22);
+                play_sound("visor_splat");
+
                 let screen_x = (240.0 * (1.0 + transform_x / transform_y)) as f32;
                 
                 let num_splatters = if dist < 1.0 {
