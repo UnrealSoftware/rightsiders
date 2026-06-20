@@ -1308,6 +1308,34 @@ async fn main() {
             draw_line(sx, sy, ex, ey, 1.0, rain_color);
         }
 
+        // Draw screen blood splatters
+        for b in &state.screen_blood {
+            let alpha_byte = ((b.lifetime / b.max_lifetime) * 230.0).clamp(0.0, 255.0) as u8;
+            let blood_color = Color::from_rgba(150, 2, 6, alpha_byte); // Cyberpunk neon blood red
+            let tail_color = Color::from_rgba(110, 0, 4, alpha_byte);
+
+            // Draw the drip trail (from start_y to y)
+            if b.y > b.start_y {
+                let thickness = (b.size * 0.2).max(1.0);
+                draw_rectangle(b.x - thickness * 0.5, b.start_y, thickness, b.y - b.start_y, tail_color);
+            }
+
+            // Draw the main droplet at the bottom (circle)
+            draw_circle(b.x, b.y, b.size * 0.5, blood_color);
+
+            // Draw tiny splash droplets around the initial splash point using a deterministic LCG seeded by coordinates
+            let mut seed = (b.x * 123.45 + b.start_y * 67.89) as u32;
+            for _ in 0..3 {
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                let dx = ((seed % 16) as f32 - 8.0) * (b.size * 0.15).max(0.5);
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                let dy = ((seed % 16) as f32 - 8.0) * (b.size * 0.15).max(0.5);
+                seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+                let r = 0.5 + (seed % 3) as f32 * (b.size * 0.1);
+                draw_circle(b.x + dx, b.start_y + dy, r, blood_color);
+            }
+        }
+
 
 
         // Damage flash visual indicator

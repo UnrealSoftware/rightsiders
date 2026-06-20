@@ -233,6 +233,17 @@ pub struct Particle {
     pub spin_speed: f32,
 }
 
+#[derive(Clone)]
+pub struct ScreenBlood {
+    pub x: f32,
+    pub y: f32,
+    pub start_y: f32,
+    pub vy: f32,
+    pub size: f32,
+    pub lifetime: f32,
+    pub max_lifetime: f32,
+}
+
 pub struct Vehicle {
     pub x: f32,
     pub y: f32,
@@ -610,6 +621,7 @@ pub struct GameState {
     pub missile_used: bool,
     pub vehicles: Vec<Vehicle>,
     pub rain_drops: Vec<RainDrop>,
+    pub screen_blood: Vec<ScreenBlood>,
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -695,6 +707,7 @@ impl GameState {
             missile_used: false,
             vehicles: Vec::new(),
             rain_drops: Vec::new(),
+            screen_blood: Vec::new(),
             rng_state: 123456789,
         };
 
@@ -840,6 +853,55 @@ impl GameState {
 
     /// Spawn 3D blood droplets and meat debris
     pub fn spawn_blood_explosion(&mut self, x: f32, y: f32) {
+        // Project explosion to screen if close in front of player
+        let mut dx = x - self.player.x;
+        if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+        else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+        let mut dy = y - self.player.y;
+        if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+        else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+        let dist_sq = dx * dx + dy * dy;
+        let dot = dx * self.player.dir_x + dy * self.player.dir_y;
+        let dist = dist_sq.sqrt();
+        if dot > 0.0 && dist < 3.0 {
+            let inv_det = 1.0 / (self.player.plane_x * self.player.dir_y - self.player.dir_x * self.player.plane_y);
+            let transform_x = inv_det * (self.player.dir_y * dx - self.player.dir_x * dy);
+            let transform_y = inv_det * (-self.player.plane_y * dx + self.player.plane_x * dy);
+            if transform_y > 0.01 {
+                let screen_x = (240.0 * (1.0 + transform_x / transform_y)) as f32;
+                
+                let num_splatters = if dist < 1.0 {
+                    8
+                } else if dist < 2.0 {
+                    5
+                } else {
+                    3
+                };
+
+                for _ in 0..num_splatters {
+                    let x_offset = (rng_float(&mut self.rng_state) - 0.5) * 200.0;
+                    let sx = (screen_x + x_offset).clamp(20.0, 460.0);
+                    let sy = 30.0 + rng_float(&mut self.rng_state) * 150.0;
+                    
+                    let vy = 15.0 + rng_float(&mut self.rng_state) * 35.0;
+                    let size = 4.0 + rng_float(&mut self.rng_state) * 12.0;
+                    let max_lifetime = 1.5 + rng_float(&mut self.rng_state) * 2.0;
+
+                    self.screen_blood.push(ScreenBlood {
+                        x: sx,
+                        y: sy,
+                        start_y: sy,
+                        vy,
+                        size,
+                        lifetime: max_lifetime,
+                        max_lifetime,
+                    });
+                }
+            }
+        }
+
         // Spawn blood sprinkles (droplets)
         let num_sprinkles = 45;
         for i in 0..num_sprinkles {
@@ -1007,6 +1069,19 @@ impl GameState {
 
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
+        // Update screen blood splatters
+        self.screen_blood.retain_mut(|b| {
+            b.lifetime -= dt;
+            if b.lifetime <= 0.0 {
+                return false;
+            }
+            // Move down (run down)
+            b.y += b.vy * dt;
+            // Slowly decelerate drip
+            b.vy *= 0.96;
+            true
+        });
+
         if self.is_in_menu {
             if crate::game::is_game_started() {
                 self.menu_timer += dt;
