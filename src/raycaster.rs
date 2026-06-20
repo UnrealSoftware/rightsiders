@@ -723,26 +723,37 @@ impl Raycaster {
                 18 | 19 | 20 => 0.70, // Neon signs
                 _ => 0.60,  // Citizens
             };
-            let sprite_height = (full_height as f32 * scale) as i32;
-            let sprite_width = (full_height as f32 * scale) as i32;
+
+            let texture = &assets.sprites[sprite.texture_idx];
+            let tex_w = texture.width;
+            let tex_h = texture.height;
+
+            let orig_sprite_height = (full_height as f32 * scale) as i32;
+            let orig_sprite_width = (full_height as f32 * scale) as i32;
+
+            // Scale bounding box on screen based on the cropped bounds relative to original 64x64
+            let sprite_height = (orig_sprite_height as f32 * (tex_h as f32 / 64.0)) as i32;
+            let sprite_width = (orig_sprite_width as f32 * (tex_w as f32 / 64.0)) as i32;
 
             if sprite_width <= 0 || sprite_height <= 0 {
                 continue;
             }
 
-            let draw_end_y_unclamped = (HEIGHT as i32 / 2).saturating_add(((pos_z - sprite.z) * full_height as f32) as i32);
-            let draw_start_y_unclamped = draw_end_y_unclamped.saturating_sub(sprite_height);
+            // Align cropped sprite with the original vertical center
+            let orig_draw_end_y = (HEIGHT as i32 / 2).saturating_add(((pos_z - sprite.z) * full_height as f32) as i32);
+            let orig_center_y = orig_draw_end_y - orig_sprite_height / 2;
+
+            let draw_start_y_unclamped = orig_center_y - sprite_height / 2;
             let draw_start_y = draw_start_y_unclamped.clamp(0, HEIGHT as i32 - 1);
-            let draw_end_y = draw_end_y_unclamped.clamp(0, HEIGHT as i32 - 1);
+            let draw_end_y = (orig_center_y + sprite_height / 2).clamp(0, HEIGHT as i32 - 1);
 
-            let draw_start_x = (-sprite_width / 2).saturating_add(sprite_screen_x).clamp(0, WIDTH as i32 - 1);
-            let draw_end_x = (sprite_width / 2).saturating_add(sprite_screen_x).clamp(0, WIDTH as i32 - 1);
+            let draw_start_x = (sprite_screen_x - sprite_width / 2).clamp(0, WIDTH as i32 - 1);
+            let draw_end_x = (sprite_screen_x + sprite_width / 2).clamp(0, WIDTH as i32 - 1);
 
-            let texture = &assets.sprites[sprite.texture_idx];
             let fog = (1.0 - (transform_y / VISIBILITY_DIST)).clamp(0.0, 1.0);
             let fog_int = (fog * 256.0) as u32;
 
-            let step_y = (TEX_SIZE as f32) / (sprite_height as f32);
+            let step_y = (tex_h as f32) / (sprite_height as f32);
 
             // Draw the sprite column by column
             for stripe in draw_start_x..draw_end_x {
@@ -751,14 +762,14 @@ impl Raycaster {
                     continue;
                 }
 
-                let tex_x = (((stripe - (sprite_screen_x - sprite_width / 2)) * TEX_SIZE as i32 / sprite_width) as usize)
-                    .min(TEX_SIZE - 1);
+                let tex_x = (((stripe - (sprite_screen_x - sprite_width / 2)) * tex_w as i32 / sprite_width) as usize)
+                    .min(tex_w - 1);
 
                 let mut tex_y_fp = (draw_start_y - draw_start_y_unclamped) as f32 * step_y;
 
                 for y in draw_start_y..draw_end_y {
-                    let tex_y = (tex_y_fp as usize).min(TEX_SIZE - 1);
-                    let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
+                    let tex_y = (tex_y_fp as usize).min(tex_h - 1);
+                    let mut pixel = texture.pixels[tex_y * tex_w + tex_x];
                     tex_y_fp += step_y;
 
                     // Transparent chroma-key (Black pixels 0x00000000)

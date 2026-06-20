@@ -638,12 +638,12 @@ pub async fn load_game_assets() -> GameAssets {
         walls.push(extract_sprite(&walls_img, grid_col * wall_size, grid_row * wall_size, wall_size, wall_size));
     }
 
-    // Extract sprites (21 sprites, arranged in a 5x5 grid)
+    // Extract sprites (21 sprites, arranged in a 5x5 grid) - cropped automatically
     let sprites_cols = 5;
     for i in 0..21 {
         let grid_col = i % sprites_cols;
         let grid_row = i / sprites_cols;
-        sprites.push(extract_sprite(&sprites_img, grid_col * sprite_size, grid_row * sprite_size, sprite_size, sprite_size));
+        sprites.push(extract_cropped_sprite(&sprites_img, grid_col * sprite_size, grid_row * sprite_size, sprite_size, sprite_size));
     }
 
     let reflection = generate_reflection_texture();
@@ -798,6 +798,75 @@ fn extract_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize, sw: usi
         width: sw,
         height: sh,
         pixels,
+    }
+}
+
+#[allow(dead_code)]
+fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize, sw: usize, sh: usize) -> SpriteTexture {
+    // First extract the raw pixels
+    let mut raw_pixels = Vec::with_capacity(sw * sh);
+    let src_w = src.width as usize;
+    for y in sy..(sy + sh) {
+        for x in sx..(sx + sw) {
+            let idx = (y * src_w + x) * 4;
+            let r = src.bytes[idx] as u32;
+            let g = src.bytes[idx + 1] as u32;
+            let b = src.bytes[idx + 2] as u32;
+            let a = src.bytes[idx + 3] as u32;
+            let color = (r << 24) | (g << 16) | (b << 8) | a;
+            raw_pixels.push(color);
+        }
+    }
+
+    // Find bounding box relative to center (sw / 2, sh / 2)
+    let cx = (sw / 2) as i32;
+    let cy = (sh / 2) as i32;
+    let mut max_dx = 0;
+    let mut max_dy = 0;
+    let mut has_visible = false;
+
+    for y in 0..sh {
+        for x in 0..sw {
+            let pixel = raw_pixels[y * sw + x];
+            let alpha = pixel & 0xff;
+            if alpha > 0 {
+                has_visible = true;
+                let dx = (x as i32 - cx).abs();
+                let dy = (y as i32 - cy).abs();
+                if dx > max_dx { max_dx = dx; }
+                if dy > max_dy { max_dy = dy; }
+            }
+        }
+    }
+
+    if !has_visible {
+        return SpriteTexture {
+            width: 1,
+            height: 1,
+            pixels: vec![0],
+        };
+    }
+
+    // Symmetric crop around the center
+    let min_x = (cx - max_dx).max(0) as usize;
+    let max_x = (cx + max_dx).min(sw as i32 - 1) as usize;
+    let min_y = (cy - max_dy).max(0) as usize;
+    let max_y = (cy + max_dy).min(sh as i32 - 1) as usize;
+
+    let cropped_w = max_x - min_x + 1;
+    let cropped_h = max_y - min_y + 1;
+    let mut cropped_pixels = Vec::with_capacity(cropped_w * cropped_h);
+
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            cropped_pixels.push(raw_pixels[y * sw + x]);
+        }
+    }
+
+    SpriteTexture {
+        width: cropped_w,
+        height: cropped_h,
+        pixels: cropped_pixels,
     }
 }
 

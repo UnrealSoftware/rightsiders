@@ -2697,9 +2697,9 @@ async fn main() {
                     // We define the content for each stage
                     let (header, lines): (&str, &[&str]) = match state.directives_stage {
                         0 => (
-                            "1. THE LAW OF THE PATH",
+                            "1. THE UNSPOKEN LAW",
                             &[
-                                "The primary directive of Apex Prime is absolute:",
+                                "It should be obvious to everyone, but some ignore it:",
                                 "All citizens must walk on the RIGHT side",
                                 "of all sidewalks at all times.",
                                 "Order, safety, and productivity depend on it."
