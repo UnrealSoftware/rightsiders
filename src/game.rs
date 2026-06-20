@@ -1008,6 +1008,11 @@ impl GameState {
 
     /// Launch guided missiles at all visible leftsiders
     pub fn trigger_missile_salvo(&mut self) {
+        // Prevent accidental trigger on mobile/desktop right after pressing PLAY
+        if 30.0 - self.time_left < 0.25 {
+            return;
+        }
+
         if self.missile_used || self.player.health <= 0.0 {
             return;
         }
@@ -2312,6 +2317,11 @@ impl GameState {
 
     /// Trigger player weapon fire
     pub fn trigger_fire(&mut self) {
+        // Prevent accidental trigger on mobile/desktop right after pressing PLAY
+        if 30.0 - self.time_left < 0.25 {
+            return;
+        }
+
         if self.player.weapon_state != WeaponState::Idle || self.player.health <= 0.0 {
             return;
         }
