@@ -1097,7 +1097,7 @@ async fn main() {
                         let g = 175.0 * fade;
                         let b = 120.0 * fade;
 
-                        let forward_offset = 0.5_f32;
+                         let forward_offset = 0.38_f32;
                         let sideways_offset = 0.15_f32;
                         let range = 3.2_f32; // 80% of 4.0
 
@@ -1129,6 +1129,26 @@ async fn main() {
                             color_r: r,
                             color_g: g,
                             color_b: b,
+                        });
+
+                        // Thruster Light (pulsing, lighter blue, size doubled, made darker/dimmer)
+                        let pulse = 1.0 + (get_time() as f32 * 22.0 + vehicle.hover_offset).sin() * 0.7;
+                        let tr = 18.0 * fade * pulse;
+                        let tg = 30.0 * fade * pulse;
+                        let tb = 42.0 * fade * pulse;
+
+                        lights.push(Spotlight {
+                            x: vehicle.x - v_dir_x * 0.45,
+                            y: vehicle.y - v_dir_y * 0.45,
+                            z: hover_z,
+                            dir_x: 0.0,
+                            dir_y: 0.0,
+                            dir_z: 0.0,
+                            cos_cutoff: -1.0, // Triggers fast circular point light path (no sqrt)
+                            range: 0.76,      // Twice as large (0.38 * 2.0 = 0.76)
+                            color_r: tr,
+                            color_g: tg,
+                            color_b: tb,
                         });
                     }
                 }

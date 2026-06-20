@@ -454,21 +454,29 @@ impl Raycaster {
                         let dist_sq = dx*dx + dy*dy + dz*dz;
                         let range = light.range;
                         if dist_sq < range * range {
-                            let dist = dist_sq.sqrt();
-                            if dist > 0.01 {
-                                let ux = dx / dist;
-                                let uy = dy / dist;
-                                let uz = dz / dist;
+                            if light.cos_cutoff <= -0.99 {
+                                // Fast circular point light path (no sqrt, no divisions, no dot product!)
+                                let intensity = 1.0 - dist_sq / (range * range);
+                                light_r += light.color_r * intensity;
+                                light_g += light.color_g * intensity;
+                                light_b += light.color_b * intensity;
+                            } else {
+                                let dist = dist_sq.sqrt();
+                                if dist > 0.01 {
+                                    let ux = dx / dist;
+                                    let uy = dy / dist;
+                                    let uz = dz / dist;
 
-                                let cos_theta = ux * light.dir_x + uy * light.dir_y + uz * light.dir_z;
-                                if cos_theta > light.cos_cutoff {
-                                    let dist_factor = 1.0 - dist / range;
-                                    let cone_factor = (cos_theta - light.cos_cutoff) / (1.0 - light.cos_cutoff);
-                                    let intensity = dist_factor * cone_factor;
+                                    let cos_theta = ux * light.dir_x + uy * light.dir_y + uz * light.dir_z;
+                                    if cos_theta > light.cos_cutoff {
+                                        let dist_factor = 1.0 - dist / range;
+                                        let cone_factor = (cos_theta - light.cos_cutoff) / (1.0 - light.cos_cutoff);
+                                        let intensity = dist_factor * cone_factor;
 
-                                    light_r += light.color_r * intensity;
-                                    light_g += light.color_g * intensity;
-                                    light_b += light.color_b * intensity;
+                                        light_r += light.color_r * intensity;
+                                        light_g += light.color_g * intensity;
+                                        light_b += light.color_b * intensity;
+                                    }
                                 }
                             }
                         }
@@ -750,21 +758,29 @@ impl Raycaster {
                     let dist_sq = dx*dx + dy*dy + dz*dz;
                     let range = light.range;
                     if dist_sq < range * range {
-                        let dist = dist_sq.sqrt();
-                        if dist > 0.01 {
-                            let ux = dx / dist;
-                            let uy = dy / dist;
-                            let uz = dz / dist;
+                        if light.cos_cutoff <= -0.99 {
+                            // Fast circular point light path (no sqrt, no divisions, no dot product!)
+                            let intensity = 1.0 - dist_sq / (range * range);
+                            light_r += light.color_r * intensity;
+                            light_g += light.color_g * intensity;
+                            light_b += light.color_b * intensity;
+                        } else {
+                            let dist = dist_sq.sqrt();
+                            if dist > 0.01 {
+                                let ux = dx / dist;
+                                let uy = dy / dist;
+                                let uz = dz / dist;
 
-                            let cos_theta = ux * light.dir_x + uy * light.dir_y + uz * light.dir_z;
-                            if cos_theta > light.cos_cutoff {
-                                let dist_factor = 1.0 - dist / range;
-                                let cone_factor = (cos_theta - light.cos_cutoff) / (1.0 - light.cos_cutoff);
-                                let intensity = dist_factor * cone_factor;
+                                let cos_theta = ux * light.dir_x + uy * light.dir_y + uz * light.dir_z;
+                                if cos_theta > light.cos_cutoff {
+                                    let dist_factor = 1.0 - dist / range;
+                                    let cone_factor = (cos_theta - light.cos_cutoff) / (1.0 - light.cos_cutoff);
+                                    let intensity = dist_factor * cone_factor;
 
-                                light_r += light.color_r * intensity;
-                                light_g += light.color_g * intensity;
-                                light_b += light.color_b * intensity;
+                                    light_r += light.color_r * intensity;
+                                    light_g += light.color_g * intensity;
+                                    light_b += light.color_b * intensity;
+                                }
                             }
                         }
                     }
