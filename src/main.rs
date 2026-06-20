@@ -1082,15 +1082,12 @@ async fn main() {
                     let dot = v_dir_x * state.player.dir_x + v_dir_y * state.player.dir_y;
                     if dot.abs() > 0.7 {
                         let hover_z = 0.15 + (get_time() as f32 * vehicle.hover_speed + vehicle.hover_offset).sin() * 0.04;
-                        let light_x = vehicle.x + v_dir_x * 0.3;
-                        let light_y = vehicle.y + v_dir_y * 0.3;
-                        let light_z = hover_z;
 
-                        // Normalize 3D direction vector pointing forward and slightly down
-                        let ld_len = (v_dir_x*v_dir_x + v_dir_y*v_dir_y + 0.15*0.15).sqrt();
+                        // Normalize 3D direction vector pointing forward and slightly down (pitch changed from -0.15 to -0.06)
+                        let ld_len = (v_dir_x*v_dir_x + v_dir_y*v_dir_y + 0.06*0.06).sqrt();
                         let ld_x = v_dir_x / ld_len;
                         let ld_y = v_dir_y / ld_len;
-                        let ld_z = -0.15 / ld_len;
+                        let ld_z = -0.06 / ld_len;
 
                         let spawn_fade = (vehicle.age / 0.3).min(1.0);
                         let dist_fade = (1.0 - (dist - 12.0) / 4.0).clamp(0.0, 1.0);
@@ -1100,15 +1097,35 @@ async fn main() {
                         let g = 175.0 * fade;
                         let b = 120.0 * fade;
 
+                        let forward_offset = 0.5_f32;
+                        let sideways_offset = 0.15_f32;
+                        let range = 3.2_f32; // 80% of 4.0
+
+                        // Left Headlight
                         lights.push(Spotlight {
-                            x: light_x,
-                            y: light_y,
-                            z: light_z,
+                            x: vehicle.x + v_dir_x * forward_offset - v_dir_y * sideways_offset,
+                            y: vehicle.y + v_dir_y * forward_offset + v_dir_x * sideways_offset,
+                            z: hover_z,
                             dir_x: ld_x,
                             dir_y: ld_y,
                             dir_z: ld_z,
                             cos_cutoff: 0.9,
-                            range: 4.0,
+                            range,
+                            color_r: r,
+                            color_g: g,
+                            color_b: b,
+                        });
+
+                        // Right Headlight
+                        lights.push(Spotlight {
+                            x: vehicle.x + v_dir_x * forward_offset + v_dir_y * sideways_offset,
+                            y: vehicle.y + v_dir_y * forward_offset - v_dir_x * sideways_offset,
+                            z: hover_z,
+                            dir_x: ld_x,
+                            dir_y: ld_y,
+                            dir_z: ld_z,
+                            cos_cutoff: 0.9,
+                            range,
                             color_r: r,
                             color_g: g,
                             color_b: b,
