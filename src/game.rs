@@ -525,6 +525,8 @@ pub struct FloatingText {
     pub text: String,
     pub x: f32, // 3D world x
     pub y: f32, // 3D world y
+    pub z: f32, // 3D world z (height)
+    pub is_hud: bool, // Render relative to crosshair
     pub color: u32,
     pub duration: f32,
 }
@@ -1212,7 +1214,7 @@ impl GameState {
         // Update floating text
         self.floating_texts.retain_mut(|txt| {
             txt.duration -= dt;
-            txt.y -= dt * 0.3; // drift upward slightly in world coordinates
+            txt.z += dt * 0.4; // drift upward vertically in 3D world space
             txt.duration > 0.0
         });
 
@@ -1627,10 +1629,23 @@ impl GameState {
                 self.offenders_killed_rocket += 1;
                 self.screen_shake = (self.screen_shake + 0.1).min(0.3);
 
+                let mut dx = kx - self.player.x;
+                if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+                else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+                let mut dy = ky - self.player.y;
+                if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+                else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+                let dist = (dx * dx + dy * dy).sqrt();
+                let is_hud = dist < 2.2;
+
                 self.floating_texts.push(FloatingText {
                     text: format!("+{} CR", reward),
                     x: kx,
-                    y: ky - 0.4,
+                    y: ky,
+                    z: 0.55,
+                    is_hud,
                     color: 0x39ff14ff,
                     duration: 1.2,
                 });
@@ -2236,6 +2251,17 @@ impl GameState {
                         // Check compliance for reward/penalty
                         let is_lefty = target.is_visually_leftsider();
 
+                        let mut dx = target.x - self.player.x;
+                        if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+                        else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+                        let mut dy = target.y - self.player.y;
+                        if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+                        else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        let is_hud = dist < 2.2;
+
                         if is_lefty {
                             // Correct elimination of criminal
                             let reward = 1000;
@@ -2247,7 +2273,9 @@ impl GameState {
                             self.floating_texts.push(FloatingText {
                                 text: format!("+{} CR", reward),
                                 x: target.x,
-                                y: target.y - 0.4,
+                                y: target.y,
+                                z: 0.55,
+                                is_hud,
                                 color: 0x39ff14ff, // Neon Green
                                 duration: 1.2,
                             });
@@ -2268,7 +2296,9 @@ impl GameState {
                             self.floating_texts.push(FloatingText {
                                 text: format!("-{} CR COLLATERAL", penalty),
                                 x: target.x,
-                                y: target.y - 0.4,
+                                y: target.y,
+                                z: 0.55,
+                                is_hud,
                                 color: 0xff007fff, // Neon Pink/Red
                                 duration: 1.5,
                             });

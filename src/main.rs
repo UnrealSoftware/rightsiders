@@ -1399,8 +1399,17 @@ async fn main() {
 
         // 3. Render 3D Floating texts on top of the upscaled screen at native high-resolution
         for txt in &state.floating_texts {
-            let proj = project_3d(txt.x, txt.y, 0.65, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, view_w, view_h);
-            if let Some(pos) = proj {
+            let pos = if txt.is_hud {
+                let max_dur = if txt.text.contains("COLLATERAL") { 1.5 } else { 1.2 };
+                let elapsed = (max_dur - txt.duration).max(0.0);
+                let sx = view_w / 2.0 + 35.0 * ui_scale;
+                let sy = view_h / 2.0 - elapsed * 40.0 * ui_scale;
+                Some((sx, sy))
+            } else {
+                project_3d(txt.x, txt.y, txt.z, state.player.x, state.player.y, state.player.dir_x, state.player.dir_y, state.player.plane_x, state.player.plane_y, view_w, view_h)
+            };
+
+            if let Some(pos) = pos {
                 let r = ((txt.color >> 24) & 0xff) as u8;
                 let g = ((txt.color >> 16) & 0xff) as u8;
                 let b = ((txt.color >> 8) & 0xff) as u8;
