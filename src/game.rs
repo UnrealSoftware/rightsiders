@@ -623,6 +623,8 @@ pub struct GameState {
     pub missiles: Vec<GuidedMissile>,
     pub missile_used: bool,
     pub vehicles: Vec<Vehicle>,
+    pub vehicle_same_lane_timer: f32,
+    pub vehicle_opp_lane_timer: f32,
     pub rain_drops: Vec<RainDrop>,
     pub screen_blood: Vec<ScreenBlood>,
     // LCG Deterministic PRNG State
@@ -709,6 +711,8 @@ impl GameState {
             missiles: Vec::new(),
             missile_used: false,
             vehicles: Vec::new(),
+            vehicle_same_lane_timer: 2.0, // Start ready to spawn
+            vehicle_opp_lane_timer: 2.0,
             rain_drops: Vec::new(),
             screen_blood: Vec::new(),
             rng_state: 123456789,
@@ -803,7 +807,6 @@ impl GameState {
     }
 
     pub fn spawn_vehicle_at(&mut self, tx: usize, ty: usize) {
-        let val = next_rng(&mut self.rng_state);
         let mut dx_to_player = self.player.x - (tx as f32 + 0.5);
         if dx_to_player > MAP_WIDTH as f32 / 2.0 { dx_to_player -= MAP_WIDTH as f32; }
         else if dx_to_player < -(MAP_WIDTH as f32 / 2.0) { dx_to_player += MAP_WIDTH as f32; }
@@ -812,40 +815,15 @@ impl GameState {
         if dy_to_player > MAP_HEIGHT as f32 / 2.0 { dy_to_player -= MAP_HEIGHT as f32; }
         else if dy_to_player < -(MAP_HEIGHT as f32 / 2.0) { dy_to_player += MAP_HEIGHT as f32; }
 
-        let dot = (tx as f32 + 0.5 - self.player.x) * self.player.dir_x + (ty as f32 + 0.5 - self.player.y) * self.player.dir_y;
-        let is_behind = dot < 0.0;
+        let player_is_vert = self.player.dir_y.abs() > self.player.dir_x.abs();
 
-        // Determine direction based on road type
-        let (dx, dy) = if tx % 7 == 4 && ty % 7 == 4 {
-            // Intersection
-            if is_behind {
-                if dx_to_player.abs() > dy_to_player.abs() {
-                    (if dx_to_player > 0.0 { 1 } else { -1 }, 0)
-                } else {
-                    (0, if dy_to_player > 0.0 { 1 } else { -1 })
-                }
-            } else {
-                match val % 4 {
-                    0 => (0, 1),
-                    1 => (0, -1),
-                    2 => (1, 0),
-                    _ => (-1, 0),
-                }
-            }
-        } else if tx % 7 == 4 {
-            // Vertical road
-            if is_behind {
-                (0, if dy_to_player > 0.0 { 1 } else { -1 })
-            } else {
-                if val % 2 == 0 { (0, 1) } else { (0, -1) }
-            }
+        // Determine direction based on road type and player orientation (to force driving straight on player's street)
+        let (dx, dy) = if player_is_vert {
+            // Force vertical movement (towards the player)
+            (0, if dy_to_player > 0.0 { 1 } else { -1 })
         } else {
-            // Horizontal road
-            if is_behind {
-                (if dx_to_player > 0.0 { 1 } else { -1 }, 0)
-            } else {
-                if val % 2 == 0 { (1, 0) } else { (-1, 0) }
-            }
+            // Force horizontal movement (towards the player)
+            (if dx_to_player > 0.0 { 1 } else { -1 }, 0)
         };
 
         let next_tx = (tx as i32 + dx).rem_euclid(MAP_WIDTH as i32) as usize;
@@ -854,7 +832,16 @@ impl GameState {
         // Speed: hover vehicles should travel faster than walking citizens (0.6 - 1.2)
         let speed = 1.8 + rng_float(&mut self.rng_state) * 1.4;
 
-        let sprite_idx = if val % 2 == 0 { 13 } else { 14 };
+        let v_len = (dx as f32 * dx as f32 + dy as f32 * dy as f32).sqrt();
+        let is_same_direction = if v_len > 0.01 {
+            let v_dir_x = dx as f32 / v_len;
+            let v_dir_y = dy as f32 / v_len;
+            let dot = v_dir_x * self.player.dir_x + v_dir_y * self.player.dir_y;
+            dot > 0.7
+        } else {
+            false
+        };
+        let sprite_idx = if is_same_direction { 13 } else { 14 };
         let hover_speed = 3.0 + rng_float(&mut self.rng_state) * 2.0;
 
         let mut vehicle = Vehicle {
@@ -1103,6 +1090,8 @@ impl GameState {
 
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
+        self.vehicle_same_lane_timer += dt;
+        self.vehicle_opp_lane_timer += dt;
         // Update screen blood splatters
         self.screen_blood.retain_mut(|b| {
             b.lifetime -= dt;
@@ -1901,54 +1890,66 @@ impl GameState {
             }
 
             true
-        });
-
-        // Count visible vehicles in front of the player
-        let mut visible_v_count = 0;
+        });        // Count active vehicles in each lane
+        let mut same_lane_count = 0;
+        let mut opp_lane_count = 0;
         for v in &self.vehicles {
-            let mut dx = v.x - px;
-            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
-            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+            let mut vdx = v.next_tx as f32 - v.tx as f32;
+            if vdx > MAP_WIDTH as f32 / 2.0 { vdx -= MAP_WIDTH as f32; }
+            else if vdx < -(MAP_WIDTH as f32 / 2.0) { vdx += MAP_WIDTH as f32; }
 
-            let mut dy = v.y - py;
-            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
-            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+            let mut vdy = v.next_ty as f32 - v.ty as f32;
+            if vdy > MAP_HEIGHT as f32 / 2.0 { vdy -= MAP_HEIGHT as f32; }
+            else if vdy < -(MAP_HEIGHT as f32 / 2.0) { vdy += MAP_HEIGHT as f32; }
 
-            let dist = (dx*dx + dy*dy).sqrt();
-            if dist < 16.0 {
-                let dot = dx * pdx + dy * pdy;
-                if dot > 0.0 {
-                    visible_v_count += 1;
+            let v_len = (vdx*vdx + vdy*vdy).sqrt();
+            if v_len > 0.01 {
+                let v_dir_x = vdx / v_len;
+                let v_dir_y = vdy / v_len;
+                let dot = v_dir_x * pdx + v_dir_y * pdy;
+                if dot > 0.7 {
+                    same_lane_count += 1;
+                } else if dot < -0.7 {
+                    opp_lane_count += 1;
                 }
             }
         }
 
-        // Spawn vehicles on roads in front of the player
-        let target_visible_v = 10;
-        let mut v_spawn_attempts = 0;
-        while visible_v_count < target_visible_v && v_spawn_attempts < 15 {
-            v_spawn_attempts += 1;
+        let force_immediate_spawn = same_lane_count == 0 && opp_lane_count == 0;
+        if force_immediate_spawn || (same_lane_count < 4 && self.vehicle_same_lane_timer >= 2.0) || (opp_lane_count < 4 && self.vehicle_opp_lane_timer >= 2.0) {
             let p_tile_x = self.player.tx as i32;
             let p_tile_y = self.player.ty as i32;
             let center_x = p_tile_x;
             let center_y = p_tile_y;
 
+            let target_road_x = {
+                let q = (p_tile_x - 4) as f32 / 7.0;
+                let r = q.round() as i32;
+                (r * 7 + 4).rem_euclid(MAP_WIDTH as i32) as usize
+            };
+            let target_road_y = {
+                let q = (p_tile_y - 4) as f32 / 7.0;
+                let r = q.round() as i32;
+                (r * 7 + 4).rem_euclid(MAP_HEIGHT as i32) as usize
+            };
+
             let player_is_vert = pdy.abs() > pdx.abs();
-            let mut candidates = Vec::new();
-            for gx_raw in (center_x - 10)..=(center_x + 10) {
-                for gy_raw in (center_y - 10)..=(center_y + 10) {
+            let mut same_lane_candidates = Vec::new();
+            let mut opp_lane_candidates = Vec::new();
+
+            for gx_raw in (center_x - 20)..=(center_x + 20) {
+                for gy_raw in (center_y - 20)..=(center_y + 20) {
                     let gx = gx_raw.rem_euclid(MAP_WIDTH as i32) as usize;
                     let gy = gy_raw.rem_euclid(MAP_HEIGHT as i32) as usize;
                     
                     if self.map.grid[gx][gy] == TileType::Road {
-                        // Only spawn on roads parallel to player's current movement axis
-                        if player_is_vert && (gx % 7 != 4) {
+                        // Only spawn on the player's current street axis
+                        if player_is_vert && (gx != target_road_x) {
                             continue;
                         }
-                        if !player_is_vert && (gy % 7 != 4) {
+                        if !player_is_vert && (gy != target_road_y) {
                             continue;
                         }
-
                         let mut tdx = gx as f32 + 0.5 - px;
                         if tdx > MAP_WIDTH as f32 / 2.0 { tdx -= MAP_WIDTH as f32; }
                         else if tdx < -(MAP_WIDTH as f32 / 2.0) { tdx += MAP_WIDTH as f32; }
@@ -1958,33 +1959,62 @@ impl GameState {
                         else if tdy < -(MAP_HEIGHT as f32 / 2.0) { tdy += MAP_HEIGHT as f32; }
 
                         let dist = (tdx*tdx + tdy*tdy).sqrt();
-                        if dist >= 5.0 && dist <= 16.0 {
-                            let dot = tdx * pdx + tdy * pdy;
-                            if dot > 0.4 || dot < -0.4 {
-                                let mut occupied = false;
-                                for v in &self.vehicles {
-                                    if (v.tx % MAP_WIDTH == gx && v.ty % MAP_HEIGHT == gy) ||
-                                       (v.next_tx % MAP_WIDTH == gx && v.next_ty % MAP_HEIGHT == gy) {
-                                        occupied = true;
-                                        break;
-                                    }
-                                }
-                                if !occupied {
-                                    candidates.push((gx_raw, gy_raw));
-                                }
+                        let dot = tdx * pdx + tdy * pdy;
+
+                        // Check occupied
+                        let mut occupied = false;
+                        for v in &self.vehicles {
+                            if (v.tx % MAP_WIDTH == gx && v.ty % MAP_HEIGHT == gy) ||
+                               (v.next_tx % MAP_WIDTH == gx && v.next_ty % MAP_HEIGHT == gy) {
+                                occupied = true;
+                                break;
                             }
+                        }
+                        if occupied {
+                            continue;
+                        }
+
+                        // Right lane (same direction): spawn behind player, dist 5.0 to 16.0
+                        if dist >= 5.0 && dist <= 16.0 && dot < -0.4 {
+                            same_lane_candidates.push((gx_raw, gy_raw));
+                        }
+
+                        // Left lane (opposite direction): spawn far in front of player, dist 16.0 to 20.0
+                        if dist >= 16.0 && dist <= 20.0 && dot > 0.4 {
+                            opp_lane_candidates.push((gx_raw, gy_raw));
                         }
                     }
                 }
             }
 
-            if !candidates.is_empty() {
-                let idx = (next_rng(&mut self.rng_state) as usize) % candidates.len();
-                let (sx, sy) = candidates[idx];
-                self.spawn_vehicle_at(sx as usize, sy as usize);
-                visible_v_count += 1;
+            if force_immediate_spawn {
+                if !opp_lane_candidates.is_empty() {
+                    let idx = (next_rng(&mut self.rng_state) as usize) % opp_lane_candidates.len();
+                    let (sx, sy) = opp_lane_candidates[idx];
+                    self.spawn_vehicle_at(sx as usize, sy as usize);
+                    self.vehicle_opp_lane_timer = 0.0;
+                } else if !same_lane_candidates.is_empty() {
+                    let idx = (next_rng(&mut self.rng_state) as usize) % same_lane_candidates.len();
+                    let (sx, sy) = same_lane_candidates[idx];
+                    self.spawn_vehicle_at(sx as usize, sy as usize);
+                    self.vehicle_same_lane_timer = 0.0;
+                }
             } else {
-                break;
+                // Spawn same lane vehicle
+                if same_lane_count < 4 && self.vehicle_same_lane_timer >= 2.0 && !same_lane_candidates.is_empty() {
+                    let idx = (next_rng(&mut self.rng_state) as usize) % same_lane_candidates.len();
+                    let (sx, sy) = same_lane_candidates[idx];
+                    self.spawn_vehicle_at(sx as usize, sy as usize);
+                    self.vehicle_same_lane_timer = 0.0;
+                }
+
+                // Spawn opposite lane vehicle
+                if opp_lane_count < 4 && self.vehicle_opp_lane_timer >= 2.0 && !opp_lane_candidates.is_empty() {
+                    let idx = (next_rng(&mut self.rng_state) as usize) % opp_lane_candidates.len();
+                    let (sx, sy) = opp_lane_candidates[idx];
+                    self.spawn_vehicle_at(sx as usize, sy as usize);
+                    self.vehicle_opp_lane_timer = 0.0;
+                }
             }
         }
 

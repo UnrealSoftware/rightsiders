@@ -1096,9 +1096,9 @@ async fn main() {
                         let dist_fade = (1.0 - (dist - 12.0) / 4.0).clamp(0.0, 1.0);
                         let fade = spawn_fade * dist_fade;
 
-                        let r = 245.0 * fade;
-                        let g = 250.0 * fade;
-                        let b = 170.0 * fade;
+                        let r = 170.0 * fade;
+                        let g = 175.0 * fade;
+                        let b = 120.0 * fade;
 
                         lights.push(Spotlight {
                             x: light_x,
@@ -1108,7 +1108,7 @@ async fn main() {
                             dir_y: ld_y,
                             dir_z: ld_z,
                             cos_cutoff: 0.9,
-                            range: 5.0,
+                            range: 4.0,
                             color_r: r,
                             color_g: g,
                             color_b: b,
