@@ -2965,7 +2965,7 @@ async fn main() {
                     // We define the content for each stage
                     let (header, lines): (&str, &[&str]) = match state.directives_stage {
                         0 => (
-                            "1. THE UNSPOKEN LAW",
+                            "1. A SIMPLE RULE",
                             &[
                                 "Obvious to everyone, ignored by many:",
                                 "All citizens must walk on the RIGHT side",
@@ -2979,7 +2979,7 @@ async fn main() {
                                 "A 'Right Sider' is a law-abiding citizen",
                                 "who walks exclusively on the right.",
                                 "They keep our lanes clean and efficient.",
-                                "They are the backbone of Apex Prime."
+                                "They are the backbone of humanity."
                             ]
                         ),
                         2 => (
