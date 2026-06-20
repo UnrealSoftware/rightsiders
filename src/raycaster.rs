@@ -15,6 +15,7 @@ pub struct Raycaster {
     pub decal_grid: Vec<Vec<usize>>, // Grid mapping tile index to decal indices
     row_distances: Vec<f32>,
     row_fogs: Vec<f32>,
+    pub wall_frames: Vec<[u8; 32]>, // Precomputed wall texture frame sequence
 }
 
 pub struct SpriteToRender {
@@ -50,6 +51,78 @@ impl Raycaster {
             decal_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
             row_distances,
             row_fogs,
+            wall_frames: vec![[0u8; 32]; MAP_WIDTH * MAP_HEIGHT],
+        }
+    }
+
+    /// Precompute wall texture selections for the static map
+    pub fn precompute_wall_frames(&mut self, map: &CityMap, num_walls: usize) {
+        for wx in 0..MAP_WIDTH {
+            for wy in 0..MAP_HEIGHT {
+                let cell_idx = wx * MAP_HEIGHT + wy;
+                if let TileType::Wall(wall_style) = map.grid[wx][wy] {
+                    let wall_h = match wall_style {
+                        3 => 11.0_f32,
+                        2 => 5.0_f32 + (((wx * 11 + wy * 19) % 3) as f32),
+                        1 => 6.0_f32 + (((wx * 7 + wy * 13) % 3) as f32),
+                        _ => 7.0_f32 + (((wx * 17 + wy * 23) % 4) as f32),
+                    };
+                    let max_tile_y = wall_h as i32 - 1;
+                    let mut has_transitioned = false;
+                    for tile_y in 0..=max_tile_y {
+                        let idx = tile_y as usize;
+                        if idx >= 32 { break; }
+
+                        if tile_y == 0 {
+                            let frame = if num_walls >= 8 {
+                                let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
+                                (hash as usize) % 8
+                            } else if num_walls >= 2 {
+                                let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
+                                (hash as usize) % 2
+                            } else {
+                                0
+                            };
+                            self.wall_frames[cell_idx][idx] = frame as u8;
+                        } else if (tile_y == 1 || tile_y == 2) && !has_transitioned {
+                            let hash = (wx as u32).wrapping_mul(73856093)
+                                ^ (wy as u32).wrapping_mul(19349663)
+                                ^ (tile_y as u32).wrapping_mul(83492791)
+                                ^ 0xabcdef;
+                            let choice = (hash as usize) % num_walls;
+                            let is_first_group = if num_walls >= 16 {
+                                choice < 8
+                            } else {
+                                choice < 2
+                            };
+                            if is_first_group {
+                                self.wall_frames[cell_idx][idx] = choice as u8;
+                            } else {
+                                self.wall_frames[cell_idx][idx] = choice as u8;
+                                has_transitioned = true;
+                            }
+                        } else {
+                            let frame = if num_walls >= 16 {
+                                let hash = (wx as u32).wrapping_mul(73856093)
+                                    ^ (wy as u32).wrapping_mul(19349663)
+                                    ^ (tile_y as u32).wrapping_mul(83492791)
+                                    ^ 0xabcdef;
+                                8 + (hash as usize) % 8
+                            } else if num_walls > 2 {
+                                let remaining = num_walls - 2;
+                                let hash = (wx as u32).wrapping_mul(73856093)
+                                    ^ (wy as u32).wrapping_mul(19349663)
+                                    ^ (tile_y as u32).wrapping_mul(83492791)
+                                    ^ 0xabcdef;
+                                2 + (hash as usize) % remaining
+                            } else {
+                                0
+                            };
+                            self.wall_frames[cell_idx][idx] = frame as u8;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -79,6 +152,12 @@ impl Raycaster {
     }
 
     pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal]) {
+        #[inline(always)]
+        fn tri_wave(v: f32) -> f32 {
+            let fract = (v + 1000.0).fract();
+            (fract - 0.5).abs() * 4.0 - 1.0
+        }
+
         let time = get_time() as f32;
         // Precompute draw_end for each screen column to speed up reflection math
         let mut draw_ends = [0; WIDTH];
@@ -147,12 +226,24 @@ impl Raycaster {
                     continue;
                 }
 
-                // Determine tile coordinate (wrapping on torus)
-                let tx = (floor_x.floor() as i32).rem_euclid(MAP_WIDTH as i32) as usize;
-                let ty = (floor_y.floor() as i32).rem_euclid(MAP_HEIGHT as i32) as usize;
+                // Horizon culling: far away floor pixels fade to black directly
+                if row_distance >= VISIBILITY_DIST {
+                    self.pixels[y * WIDTH + x] = 0x000000ff;
+                    floor_x += floor_step_x;
+                    floor_y += floor_step_y;
+                    continue;
+                }
+
+                // Determine tile coordinate (fast positive-wrapped modulo)
+                let tx = ((floor_x + 630.0) as usize) % MAP_WIDTH;
+                let ty = ((floor_y + 630.0) as usize) % MAP_HEIGHT;
 
                 if tx < MAP_WIDTH && ty < MAP_HEIGHT {
                     let tile = map.grid[tx][ty];
+                    let fract_x = (floor_x + 630.0).fract();
+                    let fract_y = (floor_y + 630.0).fract();
+                    let dx = fract_x - 0.5;
+                    let dy = fract_y - 0.5;
 
                     // Base color for different tile types
                     let mut color = match tile {
@@ -160,12 +251,6 @@ impl Raycaster {
                         TileType::Road => 0x0f1013ff,    // Dark asphalt
                         TileType::Intersection => 0x1c1e22ff, // Dark gray paving
                         TileType::SidewalkVert | TileType::SidewalkHoriz => {
-                            // Sidewalk pattern
-                            let cx = tx as f32 + 0.5;
-                            let cy = ty as f32 + 0.5;
-                            let dx = floor_x - cx;
-                            let dy = floor_y - cy;
-
                             let mut base_col = 0x242830ff; // Sleek grey metal grid
 
                             // Neon Cyan border at sidewalk edges (near walls)
@@ -175,8 +260,8 @@ impl Raycaster {
                                     base_col = 0x00d0ffff; // Cyan neon edge
                                 } else {
                                     // Add grid lines along Y
-                                    let fract_y = (floor_y * 4.0).fract();
-                                    if fract_y < 0.08 || dx.abs() < 0.01 {
+                                    let fract_y_grid = (floor_y * 4.0).fract();
+                                    if fract_y_grid < 0.08 || dx.abs() < 0.01 {
                                         base_col = 0x181a20ff;
                                     }
                                 }
@@ -185,8 +270,8 @@ impl Raycaster {
                                     base_col = 0x00d0ffff; // Cyan neon edge
                                 } else {
                                     // Add grid lines along X
-                                    let fract_x = (floor_x * 4.0).fract();
-                                    if fract_x < 0.08 || dy.abs() < 0.01 {
+                                    let fract_x_grid = (floor_x * 4.0).fract();
+                                    if fract_x_grid < 0.08 || dy.abs() < 0.01 {
                                         base_col = 0x181a20ff;
                                     }
                                 }
@@ -219,10 +304,6 @@ impl Raycaster {
                         _ => (tx * 23 + ty * 37) % 11 == 0,
                     };
                     if is_drain_tile {
-                        let cx = tx as f32 + 0.5;
-                        let cy = ty as f32 + 0.5;
-                        let dx = floor_x - cx;
-                        let dy = floor_y - cy;
                         if dx.abs() <= 0.13 && dy.abs() <= 0.13 {
                             let is_rim = dx.abs() > 0.11 || dy.abs() > 0.11;
                             let is_grill = (dx * 25.0).fract().abs() < 0.3;
@@ -239,10 +320,6 @@ impl Raycaster {
                     if tile == TileType::Road || tile == TileType::Intersection {
                         let tile_hash = ((tx * 13) + (ty * 37)) % 5 == 0;
                         if tile_hash {
-                            let cx = tx as f32 + 0.5;
-                            let cy = ty as f32 + 0.5;
-                            let dx = floor_x - cx;
-                            let dy = floor_y - cy;
                             if dx * dx + dy * dy < 0.12 {
                                 is_puddle = true;
                             }
@@ -252,17 +329,19 @@ impl Raycaster {
                     // Blend blood decals (optimized tile-based mask blending)
                     let mut is_blood = false;
                     let cell_idx = tx * MAP_HEIGHT + ty;
+                    let wrapped_x = tx as f32 + fract_x;
+                    let wrapped_y = ty as f32 + fract_y;
                     for &decal_idx in &self.decal_grid[cell_idx] {
                         let decal = &decals[decal_idx];
-                        let mut dx = floor_x - decal.x;
-                        if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
-                        else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+                        let mut bdx = wrapped_x - decal.x;
+                        if bdx > 31.5 { bdx -= 63.0; }
+                        else if bdx < -31.5 { bdx += 63.0; }
 
-                        let mut dy = floor_y - decal.y;
-                        if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
-                        else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+                        let mut bdy = wrapped_y - decal.y;
+                        if bdy > 31.5 { bdy -= 63.0; }
+                        else if bdy < -31.5 { bdy += 63.0; }
 
-                        if dx * dx + dy * dy < decal.radius * decal.radius {
+                        if bdx * bdx + bdy * bdy < decal.radius * decal.radius {
                             is_blood = true;
                             break;
                         }
@@ -285,9 +364,9 @@ impl Raycaster {
                     let draw_end = draw_ends[x];
                     let y_reflected = 2 * draw_end - y as i32;
 
-                    // Ripple waves based on cos/sin over time (subtler ripple for lower reflectiveness)
+                    // Ripple waves based on fast triangle wave approximation
                     let ripple_mult = if reflect_pct == 60 { 0.015 } else if reflect_pct == 50 { 0.012 } else { 0.005 };
-                    let ripple = ripple_mult * ((floor_x * 12.0 + time * 6.0).sin() + (floor_y * 12.0 - time * 5.0).cos());
+                    let ripple = ripple_mult * (tri_wave(floor_x * 1.91 + time * 0.95) + tri_wave(floor_y * 1.91 - time * 0.8 + 0.25));
                     let ref_x = (x as f32 + ripple * 45.0) as i32;
                     let ref_y = (y_reflected as f32 + ripple * 25.0) as i32;
 
@@ -309,24 +388,21 @@ impl Raycaster {
                     let mut g = (g_base * (100 - reflect_pct) + g_ref * reflect_pct) / 100;
                     let mut b = (b_base * (100 - reflect_pct) + b_ref * reflect_pct) / 100;
 
-                    // Cyberpunk color boost for deep puddles (reflect_pct == 60)
+                    // Cyberpunk color boost for deep puddles (using fast shifts)
                     if reflect_pct == 60 {
-                        r = (r as f32 * 0.85) as u32;
-                        g = (g as f32 * 0.95) as u32;
-                        b = (b as f32 * 1.15) as u32;
+                        r = (r * 218) >> 8;
+                        g = (g * 243) >> 8;
+                        b = (b * 294) >> 8;
                     }
 
-                    color = (r.min(255) << 24) | (g.min(255) << 16) | (b.min(255) << 8) | 0xff;
-
-                    // Apply distance fog to the pixel (optimized integer math)
+                    // Apply distance fog to the pixel directly
                     if fog_int < 256 {
-                        let r = (((color >> 24) & 0xff) * fog_int) >> 8;
-                        let g = (((color >> 16) & 0xff) * fog_int) >> 8;
-                        let b = (((color >> 8) & 0xff) * fog_int) >> 8;
-                        color = (r << 24) | (g << 16) | (b << 8) | 0xff;
+                        r = (r * fog_int) >> 8;
+                        g = (g * fog_int) >> 8;
+                        b = (b * fog_int) >> 8;
                     }
 
-                    self.pixels[y * WIDTH + x] = color;
+                    self.pixels[y * WIDTH + x] = (r.min(255) << 24) | (g.min(255) << 16) | (b.min(255) << 8) | 0xff;
                 }
 
                 floor_x += floor_step_x;
@@ -337,6 +413,10 @@ impl Raycaster {
 
     /// DDA Wall Raycasting
     pub fn cast_walls(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, assets: &GameAssets) {
+        // Pre-wrap player coordinates to avoid negative coords inside DDA and step calculations
+        let player_x_wrapped = player_x.rem_euclid(MAP_WIDTH as f32);
+        let player_y_wrapped = player_y.rem_euclid(MAP_HEIGHT as f32);
+
         for x in 0..WIDTH {
             // Ray direction vector
             let camera_x = 2.0 * (x as f32) / (WIDTH as f32) - 1.0;
@@ -344,8 +424,8 @@ impl Raycaster {
             let ray_dir_y = dir_y + plane_y * camera_x;
 
             // Grid cell coordinates
-            let mut map_x = player_x as i32;
-            let mut map_y = player_y as i32;
+            let mut map_x = player_x_wrapped as i32;
+            let mut map_y = player_y_wrapped as i32;
 
             // Distance to next X or Y grid boundary
             let mut side_dist_x: f32;
@@ -361,17 +441,17 @@ impl Raycaster {
             // Calculate step and initial side distance
             if ray_dir_x < 0.0 {
                 step_x = -1;
-                side_dist_x = (player_x - map_x as f32) * delta_dist_x;
+                side_dist_x = (player_x_wrapped - map_x as f32) * delta_dist_x;
             } else {
                 step_x = 1;
-                side_dist_x = (map_x as f32 + 1.0 - player_x) * delta_dist_x;
+                side_dist_x = (map_x as f32 + 1.0 - player_x_wrapped) * delta_dist_x;
             }
             if ray_dir_y < 0.0 {
                 step_y = -1;
-                side_dist_y = (player_y - map_y as f32) * delta_dist_y;
+                side_dist_y = (player_y_wrapped - map_y as f32) * delta_dist_y;
             } else {
                 step_y = 1;
-                side_dist_y = (map_y as f32 + 1.0 - player_y) * delta_dist_y;
+                side_dist_y = (map_y as f32 + 1.0 - player_y_wrapped) * delta_dist_y;
             }
 
             // Perform DDA
@@ -385,17 +465,25 @@ impl Raycaster {
                 if side_dist_x < side_dist_y {
                     side_dist_x += delta_dist_x;
                     map_x += step_x;
+                    if map_x < 0 {
+                        map_x += MAP_WIDTH as i32;
+                    } else if map_x >= MAP_WIDTH as i32 {
+                        map_x -= MAP_WIDTH as i32;
+                    }
                     side = 0;
                 } else {
                     side_dist_y += delta_dist_y;
                     map_y += step_y;
+                    if map_y < 0 {
+                        map_y += MAP_HEIGHT as i32;
+                    } else if map_y >= MAP_HEIGHT as i32 {
+                        map_y -= MAP_HEIGHT as i32;
+                    }
                     side = 1;
                 }
 
-                // Check wall collision (wrapping on torus)
-                let wx = map_x.rem_euclid(MAP_WIDTH as i32) as usize;
-                let wy = map_y.rem_euclid(MAP_HEIGHT as i32) as usize;
-                if let TileType::Wall(style) = map.grid[wx][wy] {
+                // Check wall collision (wrapped coords maintained dynamically)
+                if let TileType::Wall(style) = map.grid[map_x as usize][map_y as usize] {
                     hit = true;
                     wall_style = style;
                 }
@@ -407,8 +495,8 @@ impl Raycaster {
                  continue;
              }
 
-             let wx = map_x.rem_euclid(MAP_WIDTH as i32) as usize;
-             let wy = map_y.rem_euclid(MAP_HEIGHT as i32) as usize;
+             let wx = map_x as usize;
+             let wy = map_y as usize;
 
              // Calculate perp wall distance to avoid fish-eye
              let perp_wall_dist = if side == 0 {
@@ -453,9 +541,9 @@ impl Raycaster {
 
             // Calculate wall texture coordinate (X)
             let mut wall_x = if side == 0 {
-                player_y + perp_wall_dist * ray_dir_y
+                player_y_wrapped + perp_wall_dist * ray_dir_y
             } else {
-                player_x + perp_wall_dist * ray_dir_x
+                player_x_wrapped + perp_wall_dist * ray_dir_x
             };
             wall_x -= wall_x.floor();
 
@@ -478,93 +566,50 @@ impl Raycaster {
             let step = (TEX_SIZE as f32) / (line_height as f32);
             let mut tex_y_fp = (draw_start_clamped as i32 - draw_start) as f32 * step;
 
-            let num_walls = assets.walls.len();
             let max_tile_y = wall_h as i32 - 1;
 
-            // Precompute frames for this column (up to 32 tiles high)
-            let mut column_frames = [0usize; 32];
-            let mut has_transitioned = false;
-
-            for tile_y in 0..=max_tile_y {
-                let idx = tile_y as usize;
-                if idx >= 32 { break; }
-
-                if tile_y == 0 {
-                    let frame = if num_walls >= 8 {
-                        let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
-                        (hash as usize) % 8
-                    } else if num_walls >= 2 {
-                        let hash = (wx as u32).wrapping_mul(73856093) ^ (wy as u32).wrapping_mul(19349663) ^ 0x9e3779b9;
-                        (hash as usize) % 2
-                    } else {
-                        0
-                    };
-                    column_frames[idx] = frame;
-                } else if (tile_y == 1 || tile_y == 2) && !has_transitioned {
-                    let hash = (wx as u32).wrapping_mul(73856093)
-                        ^ (wy as u32).wrapping_mul(19349663)
-                        ^ (tile_y as u32).wrapping_mul(83492791)
-                        ^ 0xabcdef;
-                    let choice = (hash as usize) % num_walls;
-                    let is_first_group = if num_walls >= 16 {
-                        choice < 8
-                    } else {
-                        choice < 2
-                    };
-                    if is_first_group {
-                        column_frames[idx] = choice;
-                    } else {
-                        column_frames[idx] = choice;
-                        has_transitioned = true;
-                    }
-                } else {
-                    let frame = if num_walls >= 16 {
-                        let hash = (wx as u32).wrapping_mul(73856093)
-                            ^ (wy as u32).wrapping_mul(19349663)
-                            ^ (tile_y as u32).wrapping_mul(83492791)
-                            ^ 0xabcdef;
-                        8 + (hash as usize) % 8
-                    } else if num_walls > 2 {
-                        let remaining = num_walls - 2;
-                        let hash = (wx as u32).wrapping_mul(73856093)
-                            ^ (wy as u32).wrapping_mul(19349663)
-                            ^ (tile_y as u32).wrapping_mul(83492791)
-                            ^ 0xabcdef;
-                        2 + (hash as usize) % remaining
-                    } else {
-                        0
-                    };
-                    column_frames[idx] = frame;
-                }
-            }
+            // Retrieve precomputed column frames from cache
+            let cell_idx = wx * MAP_HEIGHT + wy;
+            let column_frames = &self.wall_frames[cell_idx];
 
             let mut current_tile_y = -1;
             let mut texture = &assets.walls[0]; // dummy initial value
 
+            // Precalculate reflection angle norms once per column for side == 0 and side == 1
+            let angle_norm_0 = {
+                let rx = -ray_dir_x;
+                let ry = ray_dir_y;
+                let angle = ry.atan2(rx);
+                (angle + std::f32::consts::PI) / (2.0 * std::f32::consts::PI)
+            };
+            let angle_norm_1 = {
+                let rx = ray_dir_x;
+                let ry = -ray_dir_y;
+                let angle = ry.atan2(rx);
+                (angle + std::f32::consts::PI) / (2.0 * std::f32::consts::PI)
+            };
+
             for y in draw_start_clamped..draw_end_clamped {
-                let tex_y = ((tex_y_fp as i32).rem_euclid(TEX_SIZE as i32)) as usize;
+                // tex_y_fp is always positive; use fast bitwise & 63 (for TEX_SIZE = 64)
+                let tex_y = (tex_y_fp as usize) & (TEX_SIZE - 1);
                 let tile_y = (max_tile_y - (tex_y_fp as i32 / TEX_SIZE as i32)).clamp(0, max_tile_y);
 
                 if tile_y != current_tile_y {
                     current_tile_y = tile_y;
-                    let frame_idx = column_frames[(tile_y as usize).min(31)];
+                    let frame_idx = column_frames[(tile_y as usize).min(31)] as usize;
                     texture = &assets.walls[frame_idx];
                 }
 
-                let mut pixel = texture.pixels[tex_y * TEX_SIZE + tex_x];
+                // tex_y * TEX_SIZE is tex_y << 6 since TEX_SIZE is 64
+                let mut pixel = texture.pixels[(tex_y << 6) + tex_x];
 
                 // Detect reflective window key color (Neon Magenta: 0xFF00FFFF)
                 if pixel == 0xFF00FFFF {
-                    // Mirror ray direction based on wall alignment (side == 0 for X normal, 1 for Y normal)
-                    let ref_dir_x = if side == 0 { -ray_dir_x } else { ray_dir_x };
-                    let ref_dir_y = if side == 1 { -ray_dir_y } else { ray_dir_y };
-                    
-                    let angle = ref_dir_y.atan2(ref_dir_x); // -PI to PI
-                    let angle_norm = (angle + std::f32::consts::PI) / (2.0 * std::f32::consts::PI);
+                    let angle_norm = if side == 0 { angle_norm_0 } else { angle_norm_1 };
                     
                     // Identify individual window panes using sub-tile texture coordinates (spaced approx 16-18 pixels)
-                    let sub_x = tex_x / 16;
-                    let sub_y = tex_y / 16;
+                    let sub_x = tex_x >> 4;
+                    let sub_y = tex_y >> 4;
                     
                     // Generate a pseudo-random hash unique to this specific window pane on the map
                     let win_hash = wx.wrapping_mul(73856093)
@@ -579,7 +624,7 @@ impl Raycaster {
                     let rx = ((angle_norm * 255.0) as usize + rx_offset) % 256;
                     let ry = (tex_y + ry_offset) % 64;
                     
-                    let ref_pixel = assets.reflection.pixels[ry * 256 + rx];
+                    let ref_pixel = assets.reflection.pixels[(ry << 8) + rx]; // ry * 256 is ry << 8
                     
                     let r_ref = (ref_pixel >> 24) & 0xff;
                     let g_ref = (ref_pixel >> 16) & 0xff;
@@ -590,9 +635,10 @@ impl Raycaster {
                     let g_glass = 28u32;
                     let b_glass = 71u32;
                     
-                    let r_blend = (r_ref * 70 + r_glass * 30) / 100;
-                    let g_blend = (g_ref * 70 + g_glass * 30) / 100;
-                    let b_blend = (b_ref * 70 + b_glass * 30) / 100;
+                    // Division-free blending using fast shifts (dividing by 128)
+                    let r_blend = (r_ref * 90 + r_glass * 38) >> 7;
+                    let g_blend = (g_ref * 90 + g_glass * 38) >> 7;
+                    let b_blend = (b_ref * 90 + b_glass * 38) >> 7;
                     
                     pixel = (r_blend << 24) | (g_blend << 16) | (b_blend << 8) | 0xff;
                 }
@@ -705,8 +751,8 @@ impl Raycaster {
                     continue;
                 }
 
-                let tex_x = ((256 * (stripe - (-sprite_width / 2 + sprite_screen_x)) * TEX_SIZE as i32 / sprite_width) / 256)
-                    .clamp(0, TEX_SIZE as i32 - 1) as usize;
+                let tex_x = (((stripe - (sprite_screen_x - sprite_width / 2)) * TEX_SIZE as i32 / sprite_width) as usize)
+                    .min(TEX_SIZE - 1);
 
                 let mut tex_y_fp = (draw_start_y - draw_start_y_unclamped) as f32 * step_y;
 
@@ -762,9 +808,13 @@ impl Raycaster {
                         let src_g = (pixel >> 16) & 0xff;
                         let src_b = (pixel >> 8) & 0xff;
 
-                        let r = (src_r * alpha + dest_r * (255 - alpha)) / 255;
-                        let g = (src_g * alpha + dest_g * (255 - alpha)) / 255;
-                        let b = (src_b * alpha + dest_b * (255 - alpha)) / 255;
+                        let r_val = src_r * alpha + dest_r * (255 - alpha);
+                        let g_val = src_g * alpha + dest_g * (255 - alpha);
+                        let b_val = src_b * alpha + dest_b * (255 - alpha);
+
+                        let r = (r_val + 1 + (r_val >> 8)) >> 8;
+                        let g = (g_val + 1 + (g_val >> 8)) >> 8;
+                        let b = (b_val + 1 + (b_val >> 8)) >> 8;
                         pixel = (r << 24) | (g << 16) | (b << 8) | 0xff;
                     }
 

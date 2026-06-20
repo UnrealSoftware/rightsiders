@@ -232,6 +232,7 @@ async fn main() {
     // 4. Initialize game state and raycaster
     let mut state = GameState::new();
     let mut raycaster = Raycaster::new();
+    raycaster.precompute_wall_frames(&state.map, assets_data.walls.len());
 
     // Create CPU pixel buffer and matching GPU texture for raycasting display
     let mut screen_image = Image {
@@ -1234,10 +1235,16 @@ async fn main() {
         );
 
         // 5. Copy CPU pixels into GPU texture buffer
-        let pixels = &raycaster.pixels[0..WIDTH * HEIGHT];
-        let bytes = &mut screen_image.bytes[0..WIDTH * HEIGHT * 4];
-        for (i, rgba) in bytes.chunks_exact_mut(4).enumerate() {
-            rgba.copy_from_slice(&pixels[i].to_be_bytes());
+        let pixels = &raycaster.pixels;
+        let bytes = &mut screen_image.bytes;
+        let len = WIDTH * HEIGHT;
+        for i in 0..len {
+            let p = pixels[i];
+            let offset = i * 4;
+            bytes[offset] = (p >> 24) as u8;
+            bytes[offset + 1] = (p >> 16) as u8;
+            bytes[offset + 2] = (p >> 8) as u8;
+            bytes[offset + 3] = p as u8;
         }
         screen_texture.update(&screen_image);
 
