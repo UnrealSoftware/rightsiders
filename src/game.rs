@@ -839,12 +839,18 @@ impl GameState {
     pub fn spawn_blood_explosion(&mut self, x: f32, y: f32) {
         // Spawn blood sprinkles (droplets)
         let num_sprinkles = 45;
-        for _ in 0..num_sprinkles {
-            let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 2.0 + rng_float(&mut self.rng_state) * 4.5; // High speed scatter (faster)
-            let vx = theta.cos() * speed_h;
-            let vy = theta.sin() * speed_h;
-            let vz = 2.2 + rng_float(&mut self.rng_state) * 4.3;     // Higher vertical splash (faster)
+        for i in 0..num_sprinkles {
+            let (vx, vy, vz) = if i % 3 == 0 {
+                // 1 in 3 fall straight down and hit the ground almost instantly
+                (0.0, 0.0, -3.0 - rng_float(&mut self.rng_state) * 4.0)
+            } else {
+                let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
+                let speed_h = 2.0 + rng_float(&mut self.rng_state) * 4.5; // High speed scatter (faster)
+                let vx = theta.cos() * speed_h;
+                let vy = theta.sin() * speed_h;
+                let vz = 2.2 + rng_float(&mut self.rng_state) * 4.3;     // Higher vertical splash (faster)
+                (vx, vy, vz)
+            };
             let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
             self.particles.push(Particle {
@@ -863,12 +869,18 @@ impl GameState {
 
         // Spawn gore chunks (red meaty chunks)
         let num_chunks = 20;
-        for _ in 0..num_chunks {
-            let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
-            let speed_h = 1.5 + rng_float(&mut self.rng_state) * 3.5; // Far flung chunks (faster)
-            let vx = theta.cos() * speed_h;
-            let vy = theta.sin() * speed_h;
-            let vz = 3.5 + rng_float(&mut self.rng_state) * 5.5;     // Volcanic ejection upward (faster)
+        for i in 0..num_chunks {
+            let (vx, vy, vz) = if i % 4 == 0 {
+                // 1 in 4 fall straight down
+                (0.0, 0.0, -4.0 - rng_float(&mut self.rng_state) * 5.0)
+            } else {
+                let theta = rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI;
+                let speed_h = 1.5 + rng_float(&mut self.rng_state) * 3.5; // Far flung chunks (faster)
+                let vx = theta.cos() * speed_h;
+                let vy = theta.sin() * speed_h;
+                let vz = 3.5 + rng_float(&mut self.rng_state) * 5.5;     // Volcanic ejection upward (faster)
+                (vx, vy, vz)
+            };
             let z = 0.25 + rng_float(&mut self.rng_state) * 0.25;    // Chest level spawn
             
             self.particles.push(Particle {
