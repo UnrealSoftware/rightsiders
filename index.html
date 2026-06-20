@@ -1857,6 +1857,19 @@
             'src/assets/right_siders.mp3'
         ];
 
+        let bloodExplosionBuffer = null;
+        function decodeBloodExplosion() {
+            if (!audioCtx || bloodExplosionBuffer) return;
+            fetch('src/assets/blood_explosion.mp3')
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => audioCtx.decodeAudioData(arrayBuffer))
+                .then(decodedBuffer => {
+                    bloodExplosionBuffer = decodedBuffer;
+                    console.log("blood_explosion.mp3 loaded and decoded successfully.");
+                })
+                .catch(err => console.error("Error loading/decoding blood_explosion.mp3:", err));
+        }
+
         function initAudio() {
             if (!gameStarted) return;
             if (audioCtx) {
@@ -1866,6 +1879,7 @@
                             if (currentAudio && currentAudio.paused) {
                                 currentAudio.play().catch(() => {});
                             }
+                            decodeBloodExplosion();
                         }).catch(e => console.warn("Error resuming audioCtx:", e));
                     } catch (e) {
                         console.warn("Failed to call resume on audioCtx:", e);
@@ -1875,6 +1889,7 @@
             }
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                decodeBloodExplosion();
             } catch (e) {
                 console.error("Web Audio API not supported in this browser:", e);
             }
@@ -2076,6 +2091,28 @@
                 osc.start(now);
                 osc.stop(now + 0.15);
             } 
+            else if (type === 'blood_explosion') {
+                if (bloodExplosionBuffer) {
+                    const source = audioCtx.createBufferSource();
+                    source.buffer = bloodExplosionBuffer;
+                    
+                    const gainNode = audioCtx.createGain();
+                    // Randomize the volume a bit (reduced by 40%: between 0.38 and 0.58)
+                    const randVol = 0.38 + Math.random() * 0.20;
+                    gainNode.gain.setValueAtTime(randVol, now);
+                    
+                    // Increase playback speed a bit more (base 1.30) and vary pitch/speed randomly (between 1.15 and 1.45)
+                    const randPlayback = 1.30 + (Math.random() - 0.5) * 0.30;
+                    source.playbackRate.setValueAtTime(randPlayback, now);
+                    
+                    source.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    source.start(now);
+                } else {
+                    // Fallback to synthesized explosion if not loaded yet
+                    playSound('explosion');
+                }
+            }
             else if (type === 'explosion') {
                 // Low pitch drum drop + white noise crunch
                 const osc = audioCtx.createOscillator();
@@ -2795,6 +2832,7 @@
             } else if (!audioCtx) {
                 try {
                     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    decodeBloodExplosion();
                 } catch (e) {
                     console.error("Web Audio API not supported in this browser:", e);
                 }

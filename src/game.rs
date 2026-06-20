@@ -853,6 +853,7 @@ impl GameState {
 
     /// Spawn 3D blood droplets and meat debris
     pub fn spawn_blood_explosion(&mut self, x: f32, y: f32) {
+        play_sound("blood_explosion");
         // Project explosion to screen if close in front of player
         let mut dx = x - self.player.x;
         if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
