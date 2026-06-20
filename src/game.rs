@@ -261,6 +261,7 @@ pub struct Vehicle {
     pub hover_offset: f32,
     pub hover_speed: f32,
     pub has_played_driveby: bool,
+    pub age: f32,
 }
 
 impl Vehicle {
@@ -801,25 +802,50 @@ impl GameState {
         }
     }
 
-    /// Spawn a hover vehicle at a given road tile
     pub fn spawn_vehicle_at(&mut self, tx: usize, ty: usize) {
         let val = next_rng(&mut self.rng_state);
-        
+        let mut dx_to_player = self.player.x - (tx as f32 + 0.5);
+        if dx_to_player > MAP_WIDTH as f32 / 2.0 { dx_to_player -= MAP_WIDTH as f32; }
+        else if dx_to_player < -(MAP_WIDTH as f32 / 2.0) { dx_to_player += MAP_WIDTH as f32; }
+
+        let mut dy_to_player = self.player.y - (ty as f32 + 0.5);
+        if dy_to_player > MAP_HEIGHT as f32 / 2.0 { dy_to_player -= MAP_HEIGHT as f32; }
+        else if dy_to_player < -(MAP_HEIGHT as f32 / 2.0) { dy_to_player += MAP_HEIGHT as f32; }
+
+        let dot = (tx as f32 + 0.5 - self.player.x) * self.player.dir_x + (ty as f32 + 0.5 - self.player.y) * self.player.dir_y;
+        let is_behind = dot < 0.0;
+
         // Determine direction based on road type
         let (dx, dy) = if tx % 7 == 4 && ty % 7 == 4 {
-            // Intersection: pick randomly
-            match val % 4 {
-                0 => (0, 1),
-                1 => (0, -1),
-                2 => (1, 0),
-                _ => (-1, 0),
+            // Intersection
+            if is_behind {
+                if dx_to_player.abs() > dy_to_player.abs() {
+                    (if dx_to_player > 0.0 { 1 } else { -1 }, 0)
+                } else {
+                    (0, if dy_to_player > 0.0 { 1 } else { -1 })
+                }
+            } else {
+                match val % 4 {
+                    0 => (0, 1),
+                    1 => (0, -1),
+                    2 => (1, 0),
+                    _ => (-1, 0),
+                }
             }
         } else if tx % 7 == 4 {
-            // Vertical road: move north or south
-            if val % 2 == 0 { (0, 1) } else { (0, -1) }
+            // Vertical road
+            if is_behind {
+                (0, if dy_to_player > 0.0 { 1 } else { -1 })
+            } else {
+                if val % 2 == 0 { (0, 1) } else { (0, -1) }
+            }
         } else {
-            // Horizontal road: move east or west
-            if val % 2 == 0 { (1, 0) } else { (-1, 0) }
+            // Horizontal road
+            if is_behind {
+                (if dx_to_player > 0.0 { 1 } else { -1 }, 0)
+            } else {
+                if val % 2 == 0 { (1, 0) } else { (-1, 0) }
+            }
         };
 
         let next_tx = (tx as i32 + dx).rem_euclid(MAP_WIDTH as i32) as usize;
@@ -848,6 +874,7 @@ impl GameState {
             hover_offset: rng_float(&mut self.rng_state) * 2.0 * std::f32::consts::PI,
             hover_speed,
             has_played_driveby: false,
+            age: 0.0,
         };
         vehicle.align_position();
         self.vehicles.push(vehicle);
@@ -1822,7 +1849,7 @@ impl GameState {
             }
         }
 
-        // Despawn vehicles that are too far away or behind the player
+        // Despawn vehicles that are too far away or behind the player, or moving perpendicular (sideways) to player direction
         self.vehicles.retain(|v| {
             let mut dx = v.x - px;
             if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
@@ -1837,9 +1864,40 @@ impl GameState {
                 return false;
             }
 
+            let mut vdx = v.next_tx as f32 - v.tx as f32;
+            if vdx > MAP_WIDTH as f32 / 2.0 { vdx -= MAP_WIDTH as f32; }
+            else if vdx < -(MAP_WIDTH as f32 / 2.0) { vdx += MAP_WIDTH as f32; }
+
+            let mut vdy = v.next_ty as f32 - v.ty as f32;
+            if vdy > MAP_HEIGHT as f32 / 2.0 { vdy -= MAP_HEIGHT as f32; }
+            else if vdy < -(MAP_HEIGHT as f32 / 2.0) { vdy += MAP_HEIGHT as f32; }
+
+            let v_len = (vdx*vdx + vdy*vdy).sqrt();
+            let is_moving_away = if v_len > 0.01 {
+                let v_dir_x = vdx / v_len;
+                let v_dir_y = vdy / v_len;
+                v_dir_x * dx + v_dir_y * dy > 0.0
+            } else {
+                true
+            };
+
             let dot = dx * pdx + dy * pdy;
-            if dot < -4.0 && dist > 3.0 {
+            if dot < -4.0 && dist > 3.0 && is_moving_away {
                 return false;
+            }
+
+            // Despawn vehicles moving perpendicular to player's view direction
+            let p_len = (pdx*pdx + pdy*pdy).sqrt();
+            if v_len > 0.01 && p_len > 0.01 {
+                let v_dir_x = vdx / v_len;
+                let v_dir_y = vdy / v_len;
+                let p_dir_x = pdx / p_len;
+                let p_dir_y = pdy / p_len;
+
+                let dir_dot = v_dir_x * p_dir_x + v_dir_y * p_dir_y;
+                if dir_dot.abs() < 0.7 {
+                    return false; // Perpendicular! Despawn.
+                }
             }
 
             true
@@ -1872,9 +1930,10 @@ impl GameState {
             v_spawn_attempts += 1;
             let p_tile_x = self.player.tx as i32;
             let p_tile_y = self.player.ty as i32;
-            let center_x = p_tile_x + (pdx * 8.0) as i32;
-            let center_y = p_tile_y + (pdy * 8.0) as i32;
+            let center_x = p_tile_x;
+            let center_y = p_tile_y;
 
+            let player_is_vert = pdy.abs() > pdx.abs();
             let mut candidates = Vec::new();
             for gx_raw in (center_x - 10)..=(center_x + 10) {
                 for gy_raw in (center_y - 10)..=(center_y + 10) {
@@ -1882,6 +1941,14 @@ impl GameState {
                     let gy = gy_raw.rem_euclid(MAP_HEIGHT as i32) as usize;
                     
                     if self.map.grid[gx][gy] == TileType::Road {
+                        // Only spawn on roads parallel to player's current movement axis
+                        if player_is_vert && (gx % 7 != 4) {
+                            continue;
+                        }
+                        if !player_is_vert && (gy % 7 != 4) {
+                            continue;
+                        }
+
                         let mut tdx = gx as f32 + 0.5 - px;
                         if tdx > MAP_WIDTH as f32 / 2.0 { tdx -= MAP_WIDTH as f32; }
                         else if tdx < -(MAP_WIDTH as f32 / 2.0) { tdx += MAP_WIDTH as f32; }
@@ -1893,7 +1960,7 @@ impl GameState {
                         let dist = (tdx*tdx + tdy*tdy).sqrt();
                         if dist >= 5.0 && dist <= 16.0 {
                             let dot = tdx * pdx + tdy * pdy;
-                            if dot > 0.4 {
+                            if dot > 0.4 || dot < -0.4 {
                                 let mut occupied = false;
                                 for v in &self.vehicles {
                                     if (v.tx % MAP_WIDTH == gx && v.ty % MAP_HEIGHT == gy) ||
@@ -1994,6 +2061,7 @@ impl GameState {
             vehicle.next_ty = new_next_ty;
             vehicle.progress = new_progress;
             vehicle.align_position();
+            vehicle.age += dt;
 
             // Drive-by sound trigger logic
             let mut dx = vehicle.x - self.player.x;

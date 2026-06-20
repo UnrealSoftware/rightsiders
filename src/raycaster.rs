@@ -13,9 +13,25 @@ pub struct Raycaster {
     pub pixels: Vec<u32>,   // RGBA buffer (0xRRGGBBAA)
     pub z_buffer: Vec<f32>, // Z-buffer for occlusion
     pub decal_grid: Vec<Vec<usize>>, // Grid mapping tile index to decal indices
+    pub light_grid: Vec<Vec<usize>>, // Grid mapping tile index to light indices
     row_distances: Vec<f32>,
     row_fogs: Vec<f32>,
     pub wall_frames: Vec<[u8; 32]>, // Precomputed wall texture frame sequence
+}
+
+#[derive(Clone, Copy)]
+pub struct Spotlight {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub dir_x: f32,
+    pub dir_y: f32,
+    pub dir_z: f32,
+    pub cos_cutoff: f32,
+    pub range: f32,
+    pub color_r: f32,
+    pub color_g: f32,
+    pub color_b: f32,
 }
 
 pub struct SpriteToRender {
@@ -50,9 +66,31 @@ impl Raycaster {
             pixels: vec![0; WIDTH * HEIGHT],
             z_buffer: vec![0.0; WIDTH],
             decal_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
+            light_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
             row_distances,
             row_fogs,
             wall_frames: vec![[0u8; 32]; MAP_WIDTH * MAP_HEIGHT],
+        }
+    }
+
+    pub fn populate_light_grid(&mut self, lights: &[Spotlight]) {
+        for cell in &mut self.light_grid {
+            cell.clear();
+        }
+        for (idx, light) in lights.iter().enumerate() {
+            let range = light.range;
+            let min_tx = (light.x - range).floor() as i32;
+            let max_tx = (light.x + range).floor() as i32;
+            let min_ty = (light.y - range).floor() as i32;
+            let max_ty = (light.y + range).floor() as i32;
+
+            for cx in min_tx..=max_tx {
+                let tx = cx.rem_euclid(MAP_WIDTH as i32) as usize;
+                for cy in min_ty..=max_ty {
+                    let ty = cy.rem_euclid(MAP_HEIGHT as i32) as usize;
+                    self.light_grid[tx * MAP_HEIGHT + ty].push(idx);
+                }
+            }
         }
     }
 
@@ -152,7 +190,7 @@ impl Raycaster {
         }
     }
 
-    pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal]) {
+    pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal], lights: &[Spotlight]) {
         #[inline(always)]
         fn tri_wave(v: f32) -> f32 {
             let fract = (v + 1000.0).fract();
@@ -396,6 +434,50 @@ impl Raycaster {
                         b = (b * 294) >> 8;
                     }
 
+                    let mut light_r = 0.0;
+                    let mut light_g = 0.0;
+                    let mut light_b = 0.0;
+
+                    let cell_idx = tx * MAP_HEIGHT + ty;
+                    for &light_idx in &self.light_grid[cell_idx] {
+                        let light = &lights[light_idx];
+                        let mut dx = floor_x - light.x;
+                        if dx > 31.5 { dx -= 63.0; }
+                        else if dx < -31.5 { dx += 63.0; }
+
+                        let mut dy = floor_y - light.y;
+                        if dy > 31.5 { dy -= 63.0; }
+                        else if dy < -31.5 { dy += 63.0; }
+
+                        let dz = 0.0 - light.z;
+
+                        let dist_sq = dx*dx + dy*dy + dz*dz;
+                        let range = light.range;
+                        if dist_sq < range * range {
+                            let dist = dist_sq.sqrt();
+                            if dist > 0.01 {
+                                let ux = dx / dist;
+                                let uy = dy / dist;
+                                let uz = dz / dist;
+
+                                let cos_theta = ux * light.dir_x + uy * light.dir_y + uz * light.dir_z;
+                                if cos_theta > light.cos_cutoff {
+                                    let dist_factor = 1.0 - dist / range;
+                                    let cone_factor = (cos_theta - light.cos_cutoff) / (1.0 - light.cos_cutoff);
+                                    let intensity = dist_factor * cone_factor;
+
+                                    light_r += light.color_r * intensity;
+                                    light_g += light.color_g * intensity;
+                                    light_b += light.color_b * intensity;
+                                }
+                            }
+                        }
+                    }
+
+                    r = (r as f32 + light_r).min(255.0) as u32;
+                    g = (g as f32 + light_g).min(255.0) as u32;
+                    b = (b as f32 + light_b).min(255.0) as u32;
+
                     // Apply distance fog to the pixel directly
                     if fog_int < 256 {
                         r = (r * fog_int) >> 8;
@@ -413,7 +495,7 @@ impl Raycaster {
     }
 
     /// DDA Wall Raycasting
-    pub fn cast_walls(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, assets: &GameAssets) {
+    pub fn cast_walls(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, assets: &GameAssets, lights: &[Spotlight]) {
         // Pre-wrap player coordinates to avoid negative coords inside DDA and step calculations
         let player_x_wrapped = player_x.rem_euclid(MAP_WIDTH as f32);
         let player_y_wrapped = player_y.rem_euclid(MAP_HEIGHT as f32);
@@ -506,11 +588,14 @@ impl Raycaster {
                  side_dist_y - delta_dist_y
              };
              
-             // Protect against division by zero
-             let perp_wall_dist = if perp_wall_dist < 0.01 { 0.01 } else { perp_wall_dist };
-             self.z_buffer[x] = perp_wall_dist;
+              // Protect against division by zero
+              let perp_wall_dist = if perp_wall_dist < 0.01 { 0.01 } else { perp_wall_dist };
+              self.z_buffer[x] = perp_wall_dist;
 
-             // Calculate height of wall strip to draw (height = 1.0 unit)
+              let wall_world_x = player_x_wrapped + perp_wall_dist * ray_dir_x;
+              let wall_world_y = player_y_wrapped + perp_wall_dist * ray_dir_y;
+
+              // Calculate height of wall strip to draw (height = 1.0 unit)
              let line_height = (HEIGHT as f32 / perp_wall_dist) as i32;
 
              // Offset based on camera height pos_z = 0.4
@@ -643,6 +728,57 @@ impl Raycaster {
                     
                     pixel = (r_blend << 24) | (g_blend << 16) | (b_blend << 8) | 0xff;
                 }
+
+                let wall_world_z = wall_h - (tex_y_fp / 64.0);
+                let mut light_r = 0.0;
+                let mut light_g = 0.0;
+                let mut light_b = 0.0;
+
+                let cell_idx = wx * MAP_HEIGHT + wy;
+                for &light_idx in &self.light_grid[cell_idx] {
+                    let light = &lights[light_idx];
+                    let mut dx = wall_world_x - light.x;
+                    if dx > 31.5 { dx -= 63.0; }
+                    else if dx < -31.5 { dx += 63.0; }
+
+                    let mut dy = wall_world_y - light.y;
+                    if dy > 31.5 { dy -= 63.0; }
+                    else if dy < -31.5 { dy += 63.0; }
+
+                    let dz = wall_world_z - light.z;
+
+                    let dist_sq = dx*dx + dy*dy + dz*dz;
+                    let range = light.range;
+                    if dist_sq < range * range {
+                        let dist = dist_sq.sqrt();
+                        if dist > 0.01 {
+                            let ux = dx / dist;
+                            let uy = dy / dist;
+                            let uz = dz / dist;
+
+                            let cos_theta = ux * light.dir_x + uy * light.dir_y + uz * light.dir_z;
+                            if cos_theta > light.cos_cutoff {
+                                let dist_factor = 1.0 - dist / range;
+                                let cone_factor = (cos_theta - light.cos_cutoff) / (1.0 - light.cos_cutoff);
+                                let intensity = dist_factor * cone_factor;
+
+                                light_r += light.color_r * intensity;
+                                light_g += light.color_g * intensity;
+                                light_b += light.color_b * intensity;
+                            }
+                        }
+                    }
+                }
+
+                let mut r = ((pixel >> 24) & 0xff) as f32;
+                let mut g = ((pixel >> 16) & 0xff) as f32;
+                let mut b = ((pixel >> 8) & 0xff) as f32;
+
+                r = (r + light_r).min(255.0);
+                g = (g + light_g).min(255.0);
+                b = (b + light_b).min(255.0);
+
+                pixel = ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | 0xff;
 
                 // Shade pixel color components (RGBA format using optimized integer math)
                 if intensity_int < 256 {

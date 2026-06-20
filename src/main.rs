@@ -8,7 +8,7 @@ mod game;
 
 use macroquad::prelude::*;
 use assets::{load_game_assets, SpriteTexture};
-use raycaster::{Raycaster, WIDTH, HEIGHT, SpriteToRender};
+use raycaster::{Raycaster, WIDTH, HEIGHT, SpriteToRender, Spotlight};
 use game::{GameState, WeaponState, CitizenState};
 use map::{TileType, MAP_WIDTH, MAP_HEIGHT};
 
@@ -1050,6 +1050,76 @@ async fn main() {
             .copied()
             .collect();
 
+        // Filter and build spotlights from vehicles in range
+        let mut lights = Vec::new();
+        for vehicle in &state.vehicles {
+            // Torus wrapped distance to player
+            let mut dx = vehicle.x - state.player.x;
+            if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+            else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+            let mut dy = vehicle.y - state.player.y;
+            if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+            else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+            let dist = (dx*dx + dy*dy).sqrt();
+            if dist < 16.0 {
+                // Determine direction
+                let mut vdx = vehicle.next_tx as f32 - vehicle.tx as f32;
+                if vdx > MAP_WIDTH as f32 / 2.0 { vdx -= MAP_WIDTH as f32; }
+                else if vdx < -(MAP_WIDTH as f32 / 2.0) { vdx += MAP_WIDTH as f32; }
+
+                let mut vdy = vehicle.next_ty as f32 - vehicle.ty as f32;
+                if vdy > MAP_HEIGHT as f32 / 2.0 { vdy -= MAP_HEIGHT as f32; }
+                else if vdy < -(MAP_HEIGHT as f32 / 2.0) { vdy += MAP_HEIGHT as f32; }
+
+                let v_len = (vdx*vdx + vdy*vdy).sqrt();
+                if v_len > 0.01 {
+                    let v_dir_x = vdx / v_len;
+                    let v_dir_y = vdy / v_len;
+
+                    // Check if flying same or opposite direction of the player
+                    let dot = v_dir_x * state.player.dir_x + v_dir_y * state.player.dir_y;
+                    if dot.abs() > 0.7 {
+                        let hover_z = 0.15 + (get_time() as f32 * vehicle.hover_speed + vehicle.hover_offset).sin() * 0.04;
+                        let light_x = vehicle.x + v_dir_x * 0.3;
+                        let light_y = vehicle.y + v_dir_y * 0.3;
+                        let light_z = hover_z;
+
+                        // Normalize 3D direction vector pointing forward and slightly down
+                        let ld_len = (v_dir_x*v_dir_x + v_dir_y*v_dir_y + 0.15*0.15).sqrt();
+                        let ld_x = v_dir_x / ld_len;
+                        let ld_y = v_dir_y / ld_len;
+                        let ld_z = -0.15 / ld_len;
+
+                        let spawn_fade = (vehicle.age / 0.3).min(1.0);
+                        let dist_fade = (1.0 - (dist - 12.0) / 4.0).clamp(0.0, 1.0);
+                        let fade = spawn_fade * dist_fade;
+
+                        let r = 245.0 * fade;
+                        let g = 250.0 * fade;
+                        let b = 170.0 * fade;
+
+                        lights.push(Spotlight {
+                            x: light_x,
+                            y: light_y,
+                            z: light_z,
+                            dir_x: ld_x,
+                            dir_y: ld_y,
+                            dir_z: ld_z,
+                            cos_cutoff: 0.9,
+                            range: 5.0,
+                            color_r: r,
+                            color_g: g,
+                            color_b: b,
+                        });
+                    }
+                }
+            }
+        }
+
+        raycaster.populate_light_grid(&lights);
+
         // 1. Cast building walls (must be cast before floor for screen-space reflections)
         raycaster.cast_walls(
             state.player.x,
@@ -1060,6 +1130,7 @@ async fn main() {
             state.player.plane_y,
             &state.map,
             &assets_data,
+            &lights,
         );
 
         // 2. Cast Floor & Sidewalk markings
@@ -1072,6 +1143,7 @@ async fn main() {
             state.player.plane_y,
             &state.map,
             &close_decals,
+            &lights,
         );
 
         // 3. Populate sprite list for raycasting
