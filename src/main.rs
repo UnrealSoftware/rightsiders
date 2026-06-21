@@ -1171,6 +1171,7 @@ async fn main() {
         );
 
         // 2. Cast Floor & Sidewalk markings
+        raycaster.populate_billboard_grid(&state.active_billboards);
         raycaster.cast_floor(
             state.player.x,
             state.player.y,
@@ -1181,6 +1182,8 @@ async fn main() {
             &state.map,
             &close_decals,
             &lights,
+            &assets_data,
+            &state.active_billboards,
         );
 
         // 3. Populate sprite list for raycasting
@@ -1248,72 +1251,24 @@ async fn main() {
             });
         }
 
-        // Push procedural neon signs sticking out from walls in a radius around the player
-        let p_tx = state.player.x.floor() as i32;
-        let p_ty = state.player.y.floor() as i32;
-        let radius = 10;
-        for dx in -radius..=radius {
-            for dy in -radius..=radius {
-                let gx = (p_tx + dx).rem_euclid(MAP_WIDTH as i32) as usize;
-                let gy = (p_ty + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+        // Push active billboards
+        for ab in &state.active_billboards {
+            // Project wall direction onto player's camera plane to determine if we should flip
+            let wall_dx = (ab.gx as f32 + 0.5) - ab.x;
+            let wall_dy = (ab.gy as f32 + 0.5) - ab.y;
+            let plane_dot = wall_dx * state.player.plane_x + wall_dy * state.player.plane_y;
+            let flip_x = plane_dot > 0.0;
 
-                // Must be a wall
-                if let TileType::Wall(_) = state.map.grid[gx][gy] {
-                    // Check if this wall gets a neon sign procedurally (e.g. 1 in 6 walls)
-                    if (gx * 17 + gy * 31) % 6 == 0 {
-                        // Find a neighbor tile that is a sidewalk or road
-                        let west_x = (gx as i32 - 1).rem_euclid(MAP_WIDTH as i32) as usize;
-                        let east_x = (gx as i32 + 1).rem_euclid(MAP_WIDTH as i32) as usize;
-                        let north_y = (gy as i32 - 1).rem_euclid(MAP_HEIGHT as i32) as usize;
-                        let south_y = (gy as i32 + 1).rem_euclid(MAP_HEIGHT as i32) as usize;
-
-                        let is_walkable = |t: TileType| {
-                            t == TileType::SidewalkVert || t == TileType::SidewalkHoriz || t == TileType::Intersection
-                        };
-
-                        // Pick a side to stick out from
-                        let mut side = None;
-                        if is_walkable(state.map.grid[west_x][gy]) {
-                            side = Some((-0.35, 0.5));
-                        } else if is_walkable(state.map.grid[east_x][gy]) {
-                            side = Some((1.35, 0.5));
-                        } else if is_walkable(state.map.grid[gx][north_y]) {
-                            side = Some((0.5, -0.35));
-                        } else if is_walkable(state.map.grid[gx][south_y]) {
-                            side = Some((0.5, 1.35));
-                        }
-
-                        if let Some((ox, oy)) = side {
-                            // Compute neon sign sprite index (18..=24)
-                            let tex_idx = 18 + ((gx * 7 + gy * 13) % 7);
-                            let world_x = gx as f32 + ox;
-                            let world_y = gy as f32 + oy;
-
-                            // Calculate vector from sign's center to wall's center
-                            let wall_dx = (gx as f32 + 0.5) - world_x;
-                            let wall_dy = (gy as f32 + 0.5) - world_y;
-
-                            // Project wall direction onto player's camera plane
-                            let dot = wall_dx * state.player.plane_x + wall_dy * state.player.plane_y;
-
-                            // If dot > 0, the wall is to the right side of the screen/camera,
-                            // which means the sign must be flipped horizontally (anchor on the right)
-                            let flip_x = dot > 0.0;
-
-                            sprites_to_draw.push(SpriteToRender {
-                                x: world_x,
-                                y: world_y,
-                                z: 0.6, // Higher up on the wall
-                                texture_idx: tex_idx,
-                                is_targeted: false,
-                                target_color: 0,
-                                angle: 0.0,
-                                flip_x,
-                            });
-                        }
-                    }
-                }
-            }
+            sprites_to_draw.push(SpriteToRender {
+                x: ab.x,
+                y: ab.y,
+                z: ab.z,
+                texture_idx: ab.texture_idx,
+                is_targeted: false,
+                target_color: 0,
+                angle: 0.0,
+                flip_x,
+            });
         }
 
         // Push particles to sprite list

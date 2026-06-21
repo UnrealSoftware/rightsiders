@@ -1,5 +1,5 @@
 use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
-use crate::raycaster::{WIDTH, HEIGHT};
+use crate::raycaster::{WIDTH, HEIGHT, VISIBILITY_DIST};
 
 #[cfg(target_arch = "wasm32")]
 unsafe extern "C" {
@@ -22,7 +22,23 @@ unsafe extern "C" {
     fn toggle_help_js();
     fn hide_help_js();
     fn toggle_fullscreen_js();
+    fn get_random_seed_js() -> u32;
 }
+
+pub fn get_random_seed() -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    unsafe {
+        get_random_seed_js()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            Ok(d) => d.as_secs() as u32 ^ d.subsec_nanos(),
+            Err(_) => 123456789,
+        }
+    }
+}
+
 
 pub fn play_sound(name: &str) {
     #[cfg(target_arch = "wasm32")]
@@ -548,6 +564,21 @@ pub struct GuidedMissile {
     pub total_flight: f32,   // Total planned flight duration
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub struct ActiveBillboard {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub texture_idx: usize,
+    pub gx: usize,
+    pub gy: usize,
+    pub tx: usize,
+    pub ty: usize,
+    pub ox: f32,
+    pub oy: f32,
+}
+
 pub struct Player {
     pub x: f32,
     pub y: f32,
@@ -557,9 +588,6 @@ pub struct Player {
     pub plane_y: f32,
     
     pub health: f32,
-    #[allow(dead_code)]
-    pub shield: f32,
-    pub battery: f32, // Ammo charge (0.0 to 100.0)
     pub credits: i32,
     
     pub weapon_state: WeaponState,
@@ -626,7 +654,11 @@ pub struct GameState {
     pub vehicle_same_lane_timer: f32,
     pub vehicle_opp_lane_timer: f32,
     pub rain_drops: Vec<RainDrop>,
+    pub billboard_pool: Vec<usize>,
+    pub billboard_pool_idx: usize,
+    pub active_billboards: Vec<ActiveBillboard>,
     pub screen_blood: Vec<ScreenBlood>,
+    pub last_billboard_tile: (usize, usize),
     // LCG Deterministic PRNG State
     rng_state: u32,
 }
@@ -648,8 +680,6 @@ impl GameState {
             plane_x: -0.66,
             plane_y: 0.0,
             health: 100.0,
-            shield: 100.0,
-            battery: 100.0,
             credits: 1000,
             weapon_state: WeaponState::Idle,
             target_idx: None,
@@ -714,9 +744,15 @@ impl GameState {
             vehicle_same_lane_timer: 2.0, // Start ready to spawn
             vehicle_opp_lane_timer: 2.0,
             rain_drops: Vec::new(),
+            billboard_pool: vec![18, 19, 20, 21, 22, 23, 24],
+            billboard_pool_idx: 0,
+            active_billboards: Vec::new(),
             screen_blood: Vec::new(),
-            rng_state: 123456789,
+            rng_state: get_random_seed(),
+            last_billboard_tile: (999, 999),
         };
+
+        state.reshuffle_billboard_pool();
 
         // Initialize rain drops using deterministic RNG
         for _ in 0..120 {
@@ -750,6 +786,244 @@ impl GameState {
     pub fn random_float(&mut self) -> f32 {
         (self.next_random() as f32) / (u32::MAX as f32)
     }
+
+    pub fn reshuffle_billboard_pool(&mut self) {
+        let n = self.billboard_pool.len();
+        for i in (1..n).rev() {
+            let j = (self.next_random() as usize) % (i + 1);
+            self.billboard_pool.swap(i, j);
+        }
+    }
+
+    pub fn get_next_billboard_texture(&mut self) -> usize {
+        if self.billboard_pool.is_empty() {
+            return 18;
+        }
+        if self.billboard_pool_idx >= self.billboard_pool.len() {
+            self.billboard_pool_idx = 0;
+        }
+        let tex = self.billboard_pool[self.billboard_pool_idx];
+        self.billboard_pool_idx += 1;
+        tex
+    }
+
+    pub fn is_tile_visible(&self, start_x: f32, start_y: f32, target_gx: usize, target_gy: usize) -> bool {
+        let mut dx = (target_gx as f32 + 0.5) - start_x;
+        if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+        else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+        let mut dy = (target_gy as f32 + 0.5) - start_y;
+        if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+        else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+        let distance = (dx * dx + dy * dy).sqrt();
+        if distance < 0.1 {
+            return true;
+        }
+
+        let dir_x = dx / distance;
+        let dir_y = dy / distance;
+
+        let mut map_x = start_x.floor() as i32;
+        let mut map_y = start_y.floor() as i32;
+
+        let delta_dist_x = if dir_x == 0.0 { f32::MAX } else { (1.0 / dir_x).abs() };
+        let delta_dist_y = if dir_y == 0.0 { f32::MAX } else { (1.0 / dir_y).abs() };
+
+        let step_x;
+        let mut side_dist_x;
+        if dir_x < 0.0 {
+            step_x = -1;
+            side_dist_x = (start_x - map_x as f32) * delta_dist_x;
+        } else {
+            step_x = 1;
+            side_dist_x = (map_x as f32 + 1.0 - start_x) * delta_dist_x;
+        }
+
+        let step_y;
+        let mut side_dist_y;
+        if dir_y < 0.0 {
+            step_y = -1;
+            side_dist_y = (start_y - map_y as f32) * delta_dist_y;
+        } else {
+            step_y = 1;
+            side_dist_y = (map_y as f32 + 1.0 - start_y) * delta_dist_y;
+        }
+
+        let mut dist_marched = 0.0;
+        while dist_marched < distance - 0.1 {
+            if side_dist_x < side_dist_y {
+                dist_marched = side_dist_x;
+                side_dist_x += delta_dist_x;
+                map_x += step_x;
+            } else {
+                dist_marched = side_dist_y;
+                side_dist_y += delta_dist_y;
+                map_y += step_y;
+            }
+
+            let check_x = map_x.rem_euclid(MAP_WIDTH as i32) as usize;
+            let check_y = map_y.rem_euclid(MAP_HEIGHT as i32) as usize;
+
+            if check_x == target_gx && check_y == target_gy {
+                break;
+            }
+
+            if let TileType::Wall(_) = self.map.grid[check_x][check_y] {
+                return false;
+            }
+        }
+
+        true
+    }
+
+
+    pub fn update_billboards(&mut self) {
+        if self.is_in_menu || self.player.health <= 0.0 {
+            return;
+        }
+
+        let px = self.player.x;
+        let py = self.player.y;
+        let p_dir_x = self.player.dir_x;
+        let p_dir_y = self.player.dir_y;
+
+        // 1. Destroy billboards that go behind the player or are too far (invisible)
+        self.active_billboards.retain(|ab| {
+            let mut vx = ab.x - px;
+            if vx > MAP_WIDTH as f32 / 2.0 { vx -= MAP_WIDTH as f32; }
+            else if vx < -(MAP_WIDTH as f32 / 2.0) { vx += MAP_WIDTH as f32; }
+
+            let mut vy = ab.y - py;
+            if vy > MAP_HEIGHT as f32 / 2.0 { vy -= MAP_HEIGHT as f32; }
+            else if vy < -(MAP_HEIGHT as f32 / 2.0) { vy += MAP_HEIGHT as f32; }
+
+            let dot = vx * p_dir_x + vy * p_dir_y;
+            
+            // Retain if it is in front of the player (we use -0.5 as threshold to avoid premature disappearance at sides)
+            // AND close enough to be visible (within VISIBILITY_DIST + 2.0)
+            let dist_sq = vx * vx + vy * vy;
+            let range_limit = (VISIBILITY_DIST + 2.0) * (VISIBILITY_DIST + 2.0);
+            dot >= -0.5 && dist_sq < range_limit
+        });
+
+        // 2. Scan the horizon and generate billboards
+        // We scan wall tiles that are:
+        // - At a distance of 11.0 to 14.0 from the player (horizon)
+        // - In front of the player (dot > 0.0)
+        // - Walkable-adjacent
+        // - Less spacing (just cannot overlap on same tile) and only restricted per side
+        // We only scan/spawn when the player moves into a different grid tile to optimize CPU usage.
+        let p_tx = px.floor() as usize;
+        let p_ty = py.floor() as usize;
+        if p_tx != self.last_billboard_tile.0 || p_ty != self.last_billboard_tile.1 {
+            self.last_billboard_tile = (p_tx, p_ty);
+            
+            // Only spawn with a 50% chance when entering a new tile to reduce billboard density by half
+            if next_rng(&mut self.rng_state) % 100 < 50 {
+                let p_tx_i32 = p_tx as i32;
+                let p_ty_i32 = p_ty as i32;
+
+                let mut candidates = Vec::new();
+            
+            for dx in -14..=14 {
+                for dy in -14..=14 {
+                    let gx = (p_tx_i32 + dx).rem_euclid(MAP_WIDTH as i32) as usize;
+                    let gy = (p_ty_i32 + dy).rem_euclid(MAP_HEIGHT as i32) as usize;
+                    
+                    if let TileType::Wall(_) = self.map.grid[gx][gy] {
+                        // Check distance to player
+                        let mut vx = (gx as f32 + 0.5) - px;
+                        if vx > MAP_WIDTH as f32 / 2.0 { vx -= MAP_WIDTH as f32; }
+                        else if vx < -(MAP_WIDTH as f32 / 2.0) { vx += MAP_WIDTH as f32; }
+
+                        let mut vy = (gy as f32 + 0.5) - py;
+                        if vy > MAP_HEIGHT as f32 / 2.0 { vy -= MAP_HEIGHT as f32; }
+                        else if vy < -(MAP_HEIGHT as f32 / 2.0) { vy += MAP_HEIGHT as f32; }
+
+                        let dist = (vx * vx + vy * vy).sqrt();
+                        // Generate near the horizon (distance 11.0 to 14.0)
+                        if dist >= 11.0 && dist <= 14.0 {
+                            let dot = vx * p_dir_x + vy * p_dir_y;
+                            if dot > 0.0 {
+                                // Find a neighbor tile that is a sidewalk or road
+                                let west_x = (gx as i32 - 1).rem_euclid(MAP_WIDTH as i32) as usize;
+                                let east_x = (gx as i32 + 1).rem_euclid(MAP_WIDTH as i32) as usize;
+                                let north_y = (gy as i32 - 1).rem_euclid(MAP_HEIGHT as i32) as usize;
+                                let south_y = (gy as i32 + 1).rem_euclid(MAP_HEIGHT as i32) as usize;
+
+                                let is_walkable = |t: TileType| {
+                                    t == TileType::SidewalkVert || t == TileType::SidewalkHoriz || t == TileType::Intersection
+                                };
+
+                                let mut side = None;
+                                if is_walkable(self.map.grid[west_x][gy]) {
+                                    side = Some((-0.35, 0.5, west_x, gy));
+                                } else if is_walkable(self.map.grid[east_x][gy]) {
+                                    side = Some((1.35, 0.5, east_x, gy));
+                                } else if is_walkable(self.map.grid[gx][north_y]) {
+                                    side = Some((0.5, -0.35, gx, north_y));
+                                } else if is_walkable(self.map.grid[gx][south_y]) {
+                                    side = Some((0.5, 1.35, gx, south_y));
+                                }
+
+                                if let Some((ox, oy, tx, ty)) = side {
+                                    // Check if it's too close to any active billboard on the SAME side
+                                    let mut too_close = false;
+                                    for ab in &self.active_billboards {
+                                        // Compare side offset to determine if it is the same side
+                                        let same_side = (ab.ox - ox).abs() < 0.01 && (ab.oy - oy).abs() < 0.01;
+                                        if same_side {
+                                            let mut dgx = (gx as i32 - ab.gx as i32).abs();
+                                            if dgx > MAP_WIDTH as i32 / 2 { dgx = MAP_WIDTH as i32 - dgx; }
+
+                                            let mut dgy = (gy as i32 - ab.gy as i32).abs();
+                                            if dgy > MAP_HEIGHT as i32 / 2 { dgy = MAP_HEIGHT as i32 - dgy; }
+
+                                            // Spacing check: must have at least 2 free tiles between billboards (index difference >= 3)
+                                            if dgx.max(dgy) < 3 {
+                                                too_close = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if !too_close && self.is_tile_visible(px, py, tx, ty) {
+                                        candidates.push((gx, gy, tx, ty, ox, oy));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Spawn a billboard on a candidate if we have candidates
+            if !candidates.is_empty() {
+                // Pick a candidate randomly
+                let idx = (self.next_random() as usize) % candidates.len();
+                let (gx, gy, tx, ty, ox, oy) = candidates[idx];
+                
+                // Random height: same heights as before (0.6) but can be randomly a bit higher
+                let z_height = 0.6 + (self.next_random() as f32 / u32::MAX as f32) * 0.4;
+                let tex = self.get_next_billboard_texture();
+
+                self.active_billboards.push(ActiveBillboard {
+                    x: gx as f32 + ox,
+                    y: gy as f32 + oy,
+                    z: z_height,
+                    texture_idx: tex,
+                    gx,
+                    gy,
+                    tx,
+                    ty,
+                    ox,
+                    oy,
+                });
+            }
+        }
+    }
+}
 
     /// Spawn a citizen at a given tile
     pub fn spawn_citizen_at(&mut self, tx: usize, ty: usize, index: usize) {
@@ -1095,6 +1369,7 @@ impl GameState {
 
     /// Primary game state update loop
     pub fn update(&mut self, dt: f32) {
+        self.update_billboards();
         self.vehicle_same_lane_timer += dt;
         self.vehicle_opp_lane_timer += dt;
         // Update screen blood splatters
@@ -1219,11 +1494,6 @@ impl GameState {
             } else {
                 self.player.weapon_state = WeaponState::Firing(next_timer);
             }
-        }
-
-        // Battery cooling/replenishing
-        if self.player.weapon_state == WeaponState::Idle {
-            self.player.battery = (self.player.battery + dt * 45.0).min(100.0);
         }
 
         // Update lasers

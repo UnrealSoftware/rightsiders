@@ -11,18 +11,55 @@ pub struct SpriteTexture {
     pub offset_x: i32,
     #[allow(dead_code)]
     pub offset_y: i32,
+    pub avg_neon_color: Option<(f32, f32, f32)>,
 }
 
 #[allow(dead_code)]
 impl SpriteTexture {
     pub fn new(width: usize, height: usize, default_color: u32) -> Self {
-        Self {
+        let mut s = Self {
             width,
             height,
             pixels: vec![default_color; width * height],
             offset_x: 0,
             offset_y: 0,
+            avg_neon_color: None,
+        };
+        s.avg_neon_color = s.calculate_avg_neon_color();
+        s
+    }
+
+    pub fn calculate_avg_neon_color(&self) -> Option<(f32, f32, f32)> {
+        let mut r_sum = 0.0;
+        let mut g_sum = 0.0;
+        let mut b_sum = 0.0;
+        let mut count = 0;
+        for &pixel in &self.pixels {
+            let r = ((pixel >> 24) & 0xff) as f32;
+            let g = ((pixel >> 16) & 0xff) as f32;
+            let b = ((pixel >> 8) & 0xff) as f32;
+            let a = (pixel & 0xff) as f32;
+            if a > 0.0 {
+                let max_val = r.max(g).max(b);
+                let min_val = r.min(g).min(b);
+                // Check if color is bright and neon (high saturation/chroma)
+                if max_val - min_val > 30.0 {
+                    r_sum += r;
+                    g_sum += g;
+                    b_sum += b;
+                    count += 1;
+                }
+            }
         }
+        if count > 0 {
+            Some((r_sum / count as f32, g_sum / count as f32, b_sum / count as f32))
+        } else {
+            None
+        }
+    }
+
+    pub fn update_avg_neon_color(&mut self) {
+        self.avg_neon_color = self.calculate_avg_neon_color();
     }
 
     pub fn set_pixel(&mut self, x: i32, y: i32, color: u32) {
@@ -619,6 +656,12 @@ pub fn generate_assets() -> GameAssets {
     for _ in 0..4 {
         sprites.push(SpriteTexture::new(TEX_SIZE, TEX_SIZE, c_black));
     }
+    for w in &mut walls {
+        w.update_avg_neon_color();
+    }
+    for s in &mut sprites {
+        s.update_avg_neon_color();
+    }
     GameAssets {
         walls,
         sprites,
@@ -804,13 +847,16 @@ fn extract_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize, sw: usi
             pixels.push(color);
         }
     }
-    SpriteTexture {
+    let mut tex = SpriteTexture {
         width: sw,
         height: sh,
         pixels,
         offset_x: 0,
         offset_y: 0,
-    }
+        avg_neon_color: None,
+    };
+    tex.avg_neon_color = tex.calculate_avg_neon_color();
+    tex
 }
 
 #[allow(dead_code)]
@@ -858,6 +904,7 @@ fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize,
             pixels: vec![0],
             offset_x: 0,
             offset_y: 0,
+            avg_neon_color: None,
         };
     }
 
@@ -871,12 +918,15 @@ fn extract_cropped_sprite(src: &macroquad::texture::Image, sx: usize, sy: usize,
         }
     }
 
-    SpriteTexture {
+    let mut tex = SpriteTexture {
         width: cropped_w,
         height: cropped_h,
         pixels: cropped_pixels,
         offset_x: min_x as i32,
         offset_y: min_y as i32,
-    }
+        avg_neon_color: None,
+    };
+    tex.avg_neon_color = tex.calculate_avg_neon_color();
+    tex
 }
 

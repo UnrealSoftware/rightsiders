@@ -2,7 +2,7 @@
 
 use crate::assets::{GameAssets, TEX_SIZE};
 use crate::map::{CityMap, TileType, MAP_WIDTH, MAP_HEIGHT};
-use crate::game::BloodDecal;
+use crate::game::{BloodDecal, ActiveBillboard};
 use macroquad::prelude::get_time;
 
 pub const WIDTH: usize = 480;
@@ -14,6 +14,7 @@ pub struct Raycaster {
     pub z_buffer: Vec<f32>, // Z-buffer for occlusion
     pub decal_grid: Vec<Vec<usize>>, // Grid mapping tile index to decal indices
     pub light_grid: Vec<Vec<usize>>, // Grid mapping tile index to light indices
+    pub billboard_grid: Vec<Vec<usize>>, // Grid mapping tile index to billboard indices
     row_distances: Vec<f32>,
     row_fogs: Vec<f32>,
     pub wall_frames: Vec<[u8; 32]>, // Precomputed wall texture frame sequence
@@ -45,6 +46,33 @@ pub struct SpriteToRender {
     pub flip_x: bool,
 }
 
+#[allow(dead_code)]
+fn get_sign_target_tile(gx: usize, gy: usize, map: &CityMap) -> Option<(usize, usize)> {
+    if (gx * 17 + gy * 31) % 6 != 0 {
+        return None;
+    }
+    let west_x = (gx as i32 - 1).rem_euclid(MAP_WIDTH as i32) as usize;
+    let east_x = (gx as i32 + 1).rem_euclid(MAP_WIDTH as i32) as usize;
+    let north_y = (gy as i32 - 1).rem_euclid(MAP_HEIGHT as i32) as usize;
+    let south_y = (gy as i32 + 1).rem_euclid(MAP_HEIGHT as i32) as usize;
+
+    let is_walkable = |t: TileType| {
+        t == TileType::SidewalkVert || t == TileType::SidewalkHoriz || t == TileType::Intersection
+    };
+
+    if is_walkable(map.grid[west_x][gy]) {
+        Some((west_x, gy))
+    } else if is_walkable(map.grid[east_x][gy]) {
+        Some((east_x, gy))
+    } else if is_walkable(map.grid[gx][north_y]) {
+        Some((gx, north_y))
+    } else if is_walkable(map.grid[gx][south_y]) {
+        Some((gx, south_y))
+    } else {
+        None
+    }
+}
+
 impl Raycaster {
     pub fn new() -> Self {
         let mut row_distances = Vec::with_capacity(HEIGHT);
@@ -68,6 +96,7 @@ impl Raycaster {
             z_buffer: vec![0.0; WIDTH],
             decal_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
             light_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
+            billboard_grid: vec![Vec::new(); MAP_WIDTH * MAP_HEIGHT],
             row_distances,
             row_fogs,
             wall_frames: vec![[0u8; 32]; MAP_WIDTH * MAP_HEIGHT],
@@ -90,6 +119,29 @@ impl Raycaster {
                 for cy in min_ty..=max_ty {
                     let ty = cy.rem_euclid(MAP_HEIGHT as i32) as usize;
                     self.light_grid[tx * MAP_HEIGHT + ty].push(idx);
+                }
+            }
+        }
+    }
+
+    pub fn populate_billboard_grid(&mut self, billboards: &[ActiveBillboard]) {
+        for cell in &mut self.billboard_grid {
+            cell.clear();
+        }
+        for (idx, ab) in billboards.iter().enumerate() {
+            // A billboard is located at (ab.x, ab.y).
+            // It can illuminate its own target tile and maybe adjacent tiles.
+            // Since the light range is 0.55, checking cells in a radius of 1 around (ab.x, ab.y) is enough.
+            let min_tx = (ab.x - 1.0).floor() as i32;
+            let max_tx = (ab.x + 1.0).floor() as i32;
+            let min_ty = (ab.y - 1.0).floor() as i32;
+            let max_ty = (ab.y + 1.0).floor() as i32;
+
+            for cx in min_tx..=max_tx {
+                let tx = cx.rem_euclid(MAP_WIDTH as i32) as usize;
+                for cy in min_ty..=max_ty {
+                    let ty = cy.rem_euclid(MAP_HEIGHT as i32) as usize;
+                    self.billboard_grid[tx * MAP_HEIGHT + ty].push(idx);
                 }
             }
         }
@@ -191,7 +243,7 @@ impl Raycaster {
         }
     }
 
-    pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal], lights: &[Spotlight]) {
+    pub fn cast_floor(&mut self, player_x: f32, player_y: f32, dir_x: f32, dir_y: f32, plane_x: f32, plane_y: f32, map: &CityMap, decals: &[BloodDecal], lights: &[Spotlight], assets: &GameAssets, billboards: &[ActiveBillboard]) {
         #[inline(always)]
         fn tri_wave(v: f32) -> f32 {
             let fract = (v + 1000.0).fract();
@@ -482,6 +534,67 @@ impl Raycaster {
                             }
                         }
                     }
+
+                    // Ground reflection for adjacent neon signs
+                    let mut neon_r = 0.0;
+                    let mut neon_g = 0.0;
+                    let mut neon_b = 0.0;
+
+                    let cell_idx = tx * MAP_HEIGHT + ty;
+                    for &bb_idx in &self.billboard_grid[cell_idx] {
+                        let ab = &billboards[bb_idx];
+
+                        // Compute torus wrapped distance
+                        let mut dx = wrapped_x - ab.x;
+                        if dx > MAP_WIDTH as f32 / 2.0 { dx -= MAP_WIDTH as f32; }
+                        else if dx < -(MAP_WIDTH as f32 / 2.0) { dx += MAP_WIDTH as f32; }
+
+                        let mut dy = wrapped_y - ab.y;
+                        if dy > MAP_HEIGHT as f32 / 2.0 { dy -= MAP_HEIGHT as f32; }
+                        else if dy < -(MAP_HEIGHT as f32 / 2.0) { dy += MAP_HEIGHT as f32; }
+
+                        let dist_sq = dx * dx + dy * dy;
+                        let range = 0.55_f32; // Smaller size (from 0.8 to 0.55)
+                        let range_sq = range * range;
+
+                        if dist_sq < range_sq {
+                            let tex_idx = ab.texture_idx;
+                            let (nr, ng, nb) = match assets.sprites[tex_idx].avg_neon_color {
+                                Some((r, g, b)) => (r / 255.0, g / 255.0, b / 255.0),
+                                None => match tex_idx % 4 {
+                                    0 => (0.0, 0.94, 1.0),   // Cyan
+                                    1 => (1.0, 0.0, 0.5),    // Pink
+                                    2 => (0.22, 1.0, 0.08),  // Green
+                                    _ => (1.0, 0.84, 0.0),   // Yellow
+                                }
+                            };
+
+                            // Organic flickering synced with sign
+                            let time = get_time() as f32;
+                            let noise = (((time * 97.43) as f32).sin() * 43758.54).fract().abs();
+                            let flicker = if noise > 0.96 {
+                                0.25 + noise * 0.3
+                            } else if noise > 0.90 {
+                                0.7 + noise * 0.15
+                            } else {
+                                0.95 + noise * 0.05
+                            };
+
+                            // Quadratic falloff for softer look (no sqrt!) and darker intensity (from 0.65 to 0.35)
+                            let intensity = (1.0 - dist_sq / range_sq) * 0.35 * flicker;
+                            
+                            // Add a slight puddle ripple effect to the reflection
+                            let ripple = 1.0 + 0.12 * (((floor_x * 8.0 + time * 4.0).sin() + (floor_y * 8.0 - time * 3.0).cos()) * 0.5);
+                            
+                            neon_r += nr * intensity * ripple * 255.0;
+                            neon_g += ng * intensity * ripple * 255.0;
+                            neon_b += nb * intensity * ripple * 255.0;
+                        }
+                    }
+
+                    light_r += neon_r;
+                    light_g += neon_g;
+                    light_b += neon_b;
 
                     r = (r as f32 + light_r).min(255.0) as u32;
                     g = (g as f32 + light_g).min(255.0) as u32;
@@ -999,7 +1112,15 @@ impl Raycaster {
                         }
 
                         // Apply distance fog to sprite pixel (using optimized integer math)
-                        if fog_int < 256 {
+                        // Saturated/neon colors on neon signs bypass fog to appear luminous/glowing
+                        let is_neon_pixel = (sprite.texture_idx >= 18 && sprite.texture_idx <= 24) && {
+                            let r = (pixel >> 24) & 0xff;
+                            let g = (pixel >> 16) & 0xff;
+                            let b = (pixel >> 8) & 0xff;
+                            r.max(g).max(b) - r.min(g).min(b) > 30
+                        };
+
+                        if fog_int < 256 && !is_neon_pixel {
                             let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
                             let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
                             let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;
@@ -1141,7 +1262,15 @@ impl Raycaster {
                             }
 
                             // Apply distance fog to sprite pixel (using optimized integer math)
-                            if fog_int < 256 {
+                            // Saturated/neon colors on neon signs bypass fog to appear luminous/glowing
+                            let is_neon_pixel = (sprite.texture_idx >= 18 && sprite.texture_idx <= 24) && {
+                                let r = (pixel >> 24) & 0xff;
+                                let g = (pixel >> 16) & 0xff;
+                                let b = (pixel >> 8) & 0xff;
+                                r.max(g).max(b) - r.min(g).min(b) > 30
+                            };
+
+                            if fog_int < 256 && !is_neon_pixel {
                                 let r = (((pixel >> 24) & 0xff) * fog_int) >> 8;
                                 let g = (((pixel >> 16) & 0xff) * fog_int) >> 8;
                                 let b = (((pixel >> 8) & 0xff) * fog_int) >> 8;

@@ -1943,6 +1943,9 @@
                     const soundType = UTF8ToString(ptr, len);
                     playSound(soundType);
                 };
+                importObject.env.get_random_seed_js = () => {
+                    return Math.floor(Math.random() * 4294967295);
+                };
                 importObject.env.open_privacy_modal_js = () => {
                     openPrivacyModal();
                 };
