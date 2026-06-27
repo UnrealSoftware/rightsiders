@@ -2,6 +2,7 @@
 Right Siders is a game about walking on the right side, literally. Implemented using Rust, Macroquad, JavaScript and HTML.
 99% of the code is written by agentic AI using Google's Antigravity with Gemini 3.5 Flash (Medium). Music is created with Suno.
 You can play at www.rightsiders.de - it even works on mobile!
+You can also play and give feedback at itch.io: https://unreal-software.itch.io/right-siders
 
 Designed for web. PC build works too but doesn't have audio at the moment.
 
@@ -19,9 +20,10 @@ We understand your pain. Right Siders is made in Germany and we are used to righ
 Not at all. A true right sider just prefers to walk right. Not in a political way. We even say so in the main menu.
 
 ## Credits
-- Code: Gemini (only few manual tweaks)
+- Code: Gemini 3.5 Flash (Medium) via Antigravity (only few manual tweaks)
 - Music: Suno
 - Right Siders intro voice: Text to speech, manually edited with Audacity
+- Other sound effects: AI generated or license free sounds from the internet
 - Pixel Art: Peter Schauss
 
 ## License
