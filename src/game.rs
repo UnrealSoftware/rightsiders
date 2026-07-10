@@ -680,7 +680,7 @@ impl GameState {
             plane_x: -0.66,
             plane_y: 0.0,
             health: 100.0,
-            credits: 1000,
+            credits: 0,
             weapon_state: WeaponState::Idle,
             target_idx: None,
             damage_flash: 0.0,
